@@ -11,7 +11,18 @@ class Settings(BaseModel):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # Database connection URL
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cargolink.db")
+    _raw_db_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cargolink.db")
+    
+    @property
+    def DATABASE_URL(self) -> str:
+        # Convert postgres:// or postgresql:// to postgresql+asyncpg:// for async SQLAlchemy
+        url = self._raw_db_url
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
     SYNC_DATABASE_URL: str = os.getenv("SYNC_DATABASE_URL", "sqlite:///./cargolink.db")
     
     # CORS
