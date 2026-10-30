@@ -26,10 +26,8 @@ services:
     healthCheckPath: /health
 
   # React Web Frontend on Render Static Site
-  - type: web
+  - type: static
     name: cargolink-web
-    env: static
-    plan: free
     rootDir: apps/web
     buildCommand: "npm install && npm run build"
     staticPublishPath: ./dist
