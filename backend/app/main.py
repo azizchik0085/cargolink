@@ -38,6 +38,17 @@ app.include_router(admin.router, prefix=settings.API_V1_STR)
 app.include_router(notifications.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 
+@app.get("/")
+async def root():
+    return {
+        "app": "CARGOLINK Freight Marketplace API",
+        "status": "online",
+        "swagger_docs": "/docs",
+        "health": "/health",
+        "zero_commission_policy": True,
+        "free_driver_access": True
+    }
+
 @app.on_event("startup")
 async def on_startup():
     await seed_initial_data()
