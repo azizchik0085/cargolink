@@ -88,8 +88,8 @@ export default function App() {
     price: 1800,
     currency: 'USD',
     is_negotiable: true,
-    contact_name: '',
-    contact_phone: '',
+    contact_name: user?.full_name || '',
+    contact_phone: user?.phone || '',
     description: ''
   });
 
@@ -428,6 +428,8 @@ export default function App() {
         },
         body: JSON.stringify({
           ...postLoadForm,
+          contact_name: postLoadForm.contact_name || user?.full_name || 'Dispetcher',
+          contact_phone: postLoadForm.contact_phone || user?.phone || '+998901234567',
           loading_date: new Date().toISOString()
         })
       });
@@ -1247,6 +1249,36 @@ export default function App() {
                     value={postLoadForm.price}
                     onChange={(e) => setPostLoadForm({...postLoadForm, price: parseFloat(e.target.value)})}
                     className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-slate-800"
+                  />
+                </div>
+              </div>
+
+              {/* Aloqa / Dispetcher Ma'lumotlari */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Mas'ul shaxs (Dispetcher): <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Masalan: Jamshid Haydarov"
+                    value={postLoadForm.contact_name}
+                    onChange={(e) => setPostLoadForm({...postLoadForm, contact_name: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Telefon raqam: <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="+998901234567"
+                    value={postLoadForm.contact_phone}
+                    onChange={(e) => setPostLoadForm({...postLoadForm, contact_phone: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
                   />
                 </div>
               </div>
@@ -2120,14 +2152,16 @@ export default function App() {
               <div className="mt-4 p-3 bg-blue-50 text-blue-900 rounded-xl text-xs flex items-center justify-between">
                 <div>
                   <span className="text-slate-500 block">Dispetcher:</span>
-                  <strong className="text-sm">{selectedLoad.contact_name}</strong>
+                  <strong className="text-sm">
+                    {selectedLoad.contact_name || selectedLoad.company_name || 'Silk Road Dispetcher'}
+                  </strong>
                 </div>
                 <a 
-                  href={`tel:${selectedLoad.contact_phone}`}
-                  className="px-3.5 py-2 bg-blue-600 text-white rounded-lg font-bold flex items-center space-x-1"
+                  href={`tel:${selectedLoad.contact_phone || '+998901112233'}`}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center space-x-1 shadow-sm transition"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>{selectedLoad.contact_phone}</span>
+                  <span>{selectedLoad.contact_phone || '+998901112233'}</span>
                 </a>
               </div>
             </div>
