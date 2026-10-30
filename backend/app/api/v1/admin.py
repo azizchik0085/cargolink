@@ -4,12 +4,13 @@ from sqlalchemy.future import select
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core.database import get_db
 from app.core.dependencies import require_roles
 from app.models.entities import (
-    User, Company, Vehicle, Load, LoadOffer, Subscription, Invoice, SubscriptionPlan, UserRole, DriverProfile
+    User, Company, Vehicle, Load, LoadOffer, Subscription, Invoice, SubscriptionPlan, UserRole, DriverProfile,
+    SubscriptionApplication, ApplicationStatus, VerificationStatus, SubscriptionStatus
 )
 
 router = APIRouter(prefix="/admin", tags=["Administrator Dashboard & Platform Owner Controls"])
@@ -49,6 +50,11 @@ async def get_admin_metrics(
         Subscription.expires_at > datetime.utcnow()
     ))).scalar_one()
 
+    # Pending subscription applications
+    pending_applications = (await db.execute(select(func.count(SubscriptionApplication.id)).where(
+        SubscriptionApplication.status == ApplicationStatus.PENDING.value
+    ))).scalar_one()
+
     # Total revenue collected (UZS)
     total_revenue_uzs = (await db.execute(select(func.sum(Invoice.amount)).where(Invoice.status == "PAID"))).scalar_one() or 0.0
 
@@ -64,6 +70,7 @@ async def get_admin_metrics(
         "total_logistics": total_logistics,
         "active_paid_subscriptions": active_subscriptions,
         "unpaid_or_expired_logistics": max(0, total_logistics - active_subscriptions),
+        "pending_applications": pending_applications,
         "total_revenue_uzs": total_revenue_uzs,
         "mrr_uzs": total_revenue_uzs,
         "commission_rate": "0% (Zero freight commission guarantee)"
@@ -152,6 +159,140 @@ async def get_drivers_list(
             "registered_at": d.created_at.isoformat()
         })
     return output
+
+@router.get("/applications")
+async def get_subscription_applications(
+    admin_user: User = Depends(require_roles([UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Logistika kompaniyalaridan kelgan barcha to'lov va obuna arizalari.
+    """
+    stmt = select(SubscriptionApplication).options(
+        selectinload(SubscriptionApplication.user)
+    ).order_by(SubscriptionApplication.created_at.desc())
+    res = await db.execute(stmt)
+    apps = res.scalars().all()
+
+    output = []
+    for a in apps:
+        output.append({
+            "id": a.id,
+            "user_id": a.user_id,
+            "user_name": a.user.full_name if a.user else "Noma'lum",
+            "company_name": a.company_name,
+            "contact_phone": a.contact_phone,
+            "extra_phone": a.extra_phone,
+            "plan_code": a.plan_code,
+            "payment_method": a.payment_method,
+            "comment": a.comment,
+            "status": a.status,
+            "admin_notes": a.admin_notes,
+            "created_at": a.created_at.isoformat(),
+            "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None
+        })
+    return output
+
+@router.put("/applications/{application_id}/review")
+async def review_subscription_application(
+    application_id: str,
+    action: str, # "APPROVE" or "REJECT"
+    admin_notes: str = "To'lov qabul qilindi va tasdiqlandi",
+    admin_user: User = Depends(require_roles([UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Admin arizani ko'rib chiqib, to'lovni tasdiqlaydi (APPROVE) yoki rad etadi (REJECT).
+    Agar tasdiqlansa:
+    - Logist kompaniyasi VERIFIED bo'ladi.
+    - 30 kunlik faol Subscription ochiladi.
+    - Endi logist yuk e'lonlarini chop eta oladi va haydovchilarning barcha kontaktlarini ko'ra oladi!
+    """
+    stmt = select(SubscriptionApplication).where(SubscriptionApplication.id == application_id)
+    res = await db.execute(stmt)
+    app_record = res.scalar_one_or_none()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Ariza topilmadi")
+
+    # Get user and company
+    user_stmt = select(User).where(User.id == app_record.user_id)
+    user = (await db.execute(user_stmt)).scalar_one_or_none()
+    
+    comp_stmt = select(Company).where(Company.owner_id == app_record.user_id)
+    company = (await db.execute(comp_stmt)).scalar_one_or_none()
+    if not company:
+        company = Company(
+            name=app_record.company_name,
+            owner_id=app_record.user_id,
+            contact_phone=app_record.contact_phone,
+            city=user.city if user else "Tashkent"
+        )
+        db.add(company)
+        await db.flush()
+
+    if action == "APPROVE":
+        app_record.status = ApplicationStatus.APPROVED.value
+        app_record.admin_notes = admin_notes
+        app_record.reviewed_at = datetime.utcnow()
+
+        # 1. Verify Company & User
+        company.verification_status = VerificationStatus.VERIFIED.value
+        if user:
+            user.verification_status = VerificationStatus.VERIFIED.value
+
+        # 2. Get Plan
+        plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.code == app_record.plan_code)
+        plan = (await db.execute(plan_stmt)).scalar_one_or_none()
+        if not plan:
+            # Fallback to START
+            plan = (await db.execute(select(SubscriptionPlan))).scalars().first()
+
+        # 3. Create active subscription (30 days)
+        starts = datetime.utcnow()
+        expires = starts + timedelta(days=30)
+
+        # Invalidate old subscriptions
+        old_stmt = select(Subscription).where(
+            Subscription.company_id == company.id,
+            Subscription.status == SubscriptionStatus.ACTIVE.value
+        )
+        for old_s in (await db.execute(old_stmt)).scalars().all():
+            old_s.status = SubscriptionStatus.EXPIRED.value
+
+        new_sub = Subscription(
+            company_id=company.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.ACTIVE.value,
+            starts_at=starts,
+            expires_at=expires,
+            auto_renew=True
+        )
+        db.add(new_sub)
+        await db.flush()
+
+        # 4. Invoice
+        invoice = Invoice(
+            subscription_id=new_sub.id,
+            invoice_number=f"INV-ADM-{int(datetime.utcnow().timestamp())}",
+            amount=plan.price_uzs,
+            currency="UZS",
+            status="PAID",
+            payment_method=app_record.payment_method
+        )
+        db.add(invoice)
+
+        await db.commit()
+        return {
+            "success": True, 
+            "message": f"{company.name} uchun {plan.name} obunasi va to'lovi muvaffaqiyatli tasdiqlandi! Endi yuk qo'shishi va haydovchilar bilan bog'lanishi mumkin."
+        }
+
+    elif action == "REJECT":
+        app_record.status = ApplicationStatus.REJECTED.value
+        app_record.admin_notes = admin_notes
+        app_record.reviewed_at = datetime.utcnow()
+        await db.commit()
+        return {"success": True, "message": "Ariza rad etildi"}
 
 @router.put("/users/{user_id}/status")
 async def toggle_user_active_status(

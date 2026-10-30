@@ -3,10 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
+from datetime import datetime
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
-from app.models.entities import Vehicle, User, UserRole, VerificationStatus
+from app.models.entities import Vehicle, User, Company, Subscription, SubscriptionStatus, UserRole, VerificationStatus
 from app.schemas.dto import VehicleCreateRequest, VehicleResponse
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicle Marketplace (100% FREE for Drivers)"])
@@ -21,11 +22,34 @@ async def list_vehicles(
     has_temp: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0,
+    current_user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Search available trucks. 100% FREE for drivers and vehicle owners to list.
+    Search available trucks.
+    Biznes qoida: Agar foydalanuvchi logist bo'lsa va uning kompaniyasi to'lov qilib admin tomonidan aktivlashtirilmagan bo'lsa,
+    haydovchilarning telefon raqami va nozik ma'lumotlari yashirib qo'yiladi.
     """
+    # Check if viewer has active paid subscription
+    can_view_driver_contacts = True
+    if current_user and current_user.role in [UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value]:
+        # Check active subscription
+        stmt_comp = select(Company).where(Company.owner_id == current_user.id)
+        comp = (await db.execute(stmt_comp)).scalar_one_or_none()
+        if not comp or comp.verification_status != VerificationStatus.VERIFIED.value:
+            can_view_driver_contacts = False
+        else:
+            # Check active subscription
+            now = datetime.utcnow()
+            stmt_sub = select(Subscription).where(
+                Subscription.company_id == comp.id,
+                Subscription.status == SubscriptionStatus.ACTIVE.value,
+                Subscription.expires_at > now
+            )
+            sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+            if not sub:
+                can_view_driver_contacts = False
+
     stmt = select(Vehicle).options(selectinload(Vehicle.owner)).where(
         Vehicle.is_available == True
     ).order_by(Vehicle.created_at.desc())
@@ -52,12 +76,12 @@ async def list_vehicles(
         output.append({
             "id": v.id,
             "owner_id": v.owner_id,
-            "owner_name": v.owner.full_name if v.owner else "Driver",
-            "owner_phone": v.owner.phone if v.owner else None,
+            "owner_name": v.owner.full_name if (can_view_driver_contacts and v.owner) else "Tasdiqlangan Haydovchi",
+            "owner_phone": v.owner.phone if (can_view_driver_contacts and v.owner) else "To'lovdan so'ng ochiladi",
             "vehicle_type": v.vehicle_type,
             "make": v.make,
             "model": v.model,
-            "plate_number": v.plate_number,
+            "plate_number": v.plate_number if can_view_driver_contacts else (v.plate_number[:4] + "***"),
             "max_weight_tons": v.max_weight_tons,
             "max_volume_m3": v.max_volume_m3,
             "trailer_type": v.trailer_type,
@@ -69,6 +93,7 @@ async def list_vehicles(
             "has_temperature_control": v.has_temperature_control,
             "temp_min": v.temp_min,
             "temp_max": v.temp_max,
+            "contacts_locked": not can_view_driver_contacts,
             "created_at": v.created_at.isoformat()
         })
     return output

@@ -28,6 +28,18 @@ class UserRegisterRequest(BaseModel):
     max_weight_tons: Optional[float] = 22.0
     max_volume_m3: Optional[float] = 92.0
 
+class SubscriptionApplicationCreate(BaseModel):
+    company_name: str
+    contact_phone: str
+    extra_phone: Optional[str] = None
+    plan_code: str # START, STANDARD, BUSINESS, ENTERPRISE
+    payment_method: str = "BANK_TRANSFER" # CLICK, PAYME, BANK_TRANSFER
+    comment: Optional[str] = None
+
+class SubscriptionApplicationReview(BaseModel):
+    action: str # APPROVE or REJECT
+    admin_notes: Optional[str] = None
+
 class UserLoginRequest(BaseModel):
     phone: str = Field(..., example="+998901234567")
     password: str = Field(..., min_length=4)

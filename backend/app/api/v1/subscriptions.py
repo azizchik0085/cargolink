@@ -9,9 +9,12 @@ import uuid
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.entities import (
-    SubscriptionPlan, Subscription, Invoice, Company, User, UserRole, SubscriptionStatus
+    SubscriptionPlan, Subscription, Invoice, Company, User, UserRole, SubscriptionStatus,
+    SubscriptionApplication, ApplicationStatus, VerificationStatus
 )
-from app.schemas.dto import SubscriptionPlanResponse, SubscribeRequest
+from app.schemas.dto import (
+    SubscriptionPlanResponse, SubscribeRequest, SubscriptionApplicationCreate, SubscriptionApplicationReview
+)
 
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions & Billing (Logistics Monetization)"])
 
@@ -115,6 +118,89 @@ async def subscribe(
         "invoice_number": invoice.invoice_number
     }
 
+@router.post("/application")
+async def create_subscription_application(
+    req: SubscriptionApplicationCreate,
+    current_user: User = Depends(require_roles([
+        UserRole.LOGISTIC.value, 
+        UserRole.LOGISTICS_COMPANY_OWNER.value, 
+        UserRole.TRANSPORT_COMPANY.value,
+        UserRole.SUPER_ADMIN.value
+    ])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Logist sozlamalar/kabinetidan obuna va to'lov arizasini jo'natadi.
+    Bu ariza platforma egasining Admin Paneliga tushadi.
+    """
+    # 1. Update company details if exists or create
+    stmt_comp = select(Company).where(Company.owner_id == current_user.id)
+    comp = (await db.execute(stmt_comp)).scalar_one_or_none()
+    if not comp:
+        comp = Company(
+            name=req.company_name,
+            owner_id=current_user.id,
+            contact_phone=req.contact_phone,
+            verification_status=VerificationStatus.PENDING.value
+        )
+        db.add(comp)
+        await db.flush()
+    else:
+        comp.name = req.company_name
+        comp.contact_phone = req.contact_phone
+
+    # 2. Check plan
+    stmt_plan = select(SubscriptionPlan).where(SubscriptionPlan.code == req.plan_code)
+    plan = (await db.execute(stmt_plan)).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Tanlangan obuna tarifi topilmadi")
+
+    # 3. Create application
+    app_record = SubscriptionApplication(
+        user_id=current_user.id,
+        company_name=req.company_name,
+        contact_phone=req.contact_phone,
+        extra_phone=req.extra_phone,
+        plan_code=req.plan_code,
+        payment_method=req.payment_method,
+        comment=req.comment,
+        status=ApplicationStatus.PENDING.value
+    )
+    db.add(app_record)
+    await db.commit()
+    await db.refresh(app_record)
+
+    return {
+        "success": True,
+        "message": "Arizangiz qabul qilindi! Administrator to'lovni tasdiqlashi bilan profilingiz aktivlashtiriladi.",
+        "application_id": app_record.id,
+        "plan_name": plan.name,
+        "price_uzs": plan.price_uzs
+    }
+
+@router.get("/my-application")
+async def get_my_application(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(SubscriptionApplication).where(
+        SubscriptionApplication.user_id == current_user.id
+    ).order_by(SubscriptionApplication.created_at.desc())
+    app_record = (await db.execute(stmt)).scalars().first()
+    if not app_record:
+        return {"has_application": False}
+
+    return {
+        "has_application": True,
+        "id": app_record.id,
+        "company_name": app_record.company_name,
+        "contact_phone": app_record.contact_phone,
+        "plan_code": app_record.plan_code,
+        "payment_method": app_record.payment_method,
+        "status": app_record.status,
+        "admin_notes": app_record.admin_notes,
+        "created_at": app_record.created_at.isoformat()
+    }
 @router.get("/my")
 async def get_my_subscription(
     current_user: User = Depends(require_roles([UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value, UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value])),

@@ -68,8 +68,8 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
     db.add(new_user)
     await db.flush()
 
-    # Flow A: Logistics Company Owner
-    if req.role == UserRole.LOGISTICS_COMPANY_OWNER.value:
+    # Flow A: Logistics Company Owner (Yangi logist to'lov qilib admin tasdiqlamaguncha PENDING holatda turadi)
+    if req.role in [UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value]:
         company_name = req.company_name or f"{req.full_name}'s Logistics"
         company = Company(
             owner_id=new_user.id,
@@ -77,24 +77,10 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
             tax_id=req.tax_id,
             country=req.country or "Uzbekistan",
             city=req.city or "Tashkent",
-            verification_status=VerificationStatus.VERIFIED.value # Instant verified for demo
+            verification_status=VerificationStatus.PENDING.value
         )
         db.add(company)
         await db.flush()
-
-        # Automatically assign START plan free 30-day trial for smooth testing
-        plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.code == "START")
-        plan_res = await db.execute(plan_stmt)
-        start_plan = plan_res.scalar_one_or_none()
-        if start_plan:
-            sub = Subscription(
-                company_id=company.id,
-                plan_id=start_plan.id,
-                status=SubscriptionStatus.ACTIVE.value,
-                starts_at=datetime.utcnow(),
-                expires_at=datetime.utcnow() + timedelta(days=30)
-            )
-            db.add(sub)
 
     # Flow B: Driver / Vehicle Owner
     elif req.role in [UserRole.DRIVER.value, UserRole.VEHICLE_OWNER.value]:

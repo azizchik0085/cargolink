@@ -57,6 +57,31 @@ class SubscriptionStatus(str, Enum):
     CANCELLED = "CANCELLED"
     PAST_DUE = "PAST_DUE"
 
+class ApplicationStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+# ----------------- LOGISTICS SUBSCRIPTION APPLICATION -----------------
+
+class SubscriptionApplication(Base):
+    __tablename__ = "subscription_applications"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    company_name = Column(String(128), nullable=False)
+    contact_phone = Column(String(32), nullable=False)
+    extra_phone = Column(String(32), nullable=True)
+    plan_code = Column(String(32), nullable=False) # START, STANDARD, BUSINESS, ENTERPRISE
+    payment_method = Column(String(32), default="BANK_TRANSFER") # CLICK, PAYME, BANK_TRANSFER
+    comment = Column(Text, nullable=True)
+    status = Column(String(32), default=ApplicationStatus.PENDING.value) # PENDING, APPROVED, REJECTED
+    admin_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
 # ----------------- USERS & PROFILES -----------------
 
 class User(Base):

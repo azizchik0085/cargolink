@@ -31,8 +31,22 @@ export default function App() {
   const [adminMetrics, setAdminMetrics] = useState(null);
   const [adminLogistics, setAdminLogistics] = useState([]);
   const [adminDrivers, setAdminDrivers] = useState([]);
+  const [adminApplications, setAdminApplications] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminFilter, setAdminFilter] = useState('ALL'); // 'ALL', 'PAID', 'UNPAID', 'ACTIVE', 'INACTIVE'
+
+  // Logistic Subscription Application State
+  const [myApplication, setMyApplication] = useState(null);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyForm, setApplyForm] = useState({
+    company_name: '',
+    contact_phone: '',
+    extra_phone: '',
+    plan_code: 'STANDARD',
+    payment_method: 'BANK_TRANSFER',
+    comment: ''
+  });
+  const [isSubmittingApp, setIsSubmittingApp] = useState(false);
 
   // Search & Filters
   const [searchOrigin, setSearchOrigin] = useState('');
@@ -146,18 +160,82 @@ export default function App() {
   const fetchAdminData = async () => {
     setAdminLoading(true);
     try {
-      const [mRes, lRes, dRes] = await Promise.all([
+      const [mRes, lRes, dRes, aRes] = await Promise.all([
         fetch(`${API_BASE}/admin/metrics`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE}/admin/logistics-clients`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE}/admin/drivers-list`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE}/admin/applications`, { headers: { 'Authorization': `Bearer ${token}` } }),
       ]);
       if (mRes.ok) setAdminMetrics(await mRes.json());
       if (lRes.ok) setAdminLogistics(await lRes.json());
       if (dRes.ok) setAdminDrivers(await dRes.json());
+      if (aRes.ok) setAdminApplications(await aRes.json());
     } catch (e) {
       console.error("Admin data fetch error:", e);
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const handleReviewApplication = async (appId, action) => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/applications/${appId}/review?action=${action}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || "Ariza ko'rib chiqildi");
+        fetchAdminData();
+      } else {
+        showToast(data.detail || 'Xatolik', 'error');
+      }
+    } catch (e) {
+      showToast('Tarmoq xatosi', 'error');
+    }
+  };
+
+  const fetchMyApplication = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/my-application`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMyApplication(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSubmitApplication = async (e) => {
+    e.preventDefault();
+    if (!token) return;
+    setIsSubmittingApp(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/application`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(applyForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message);
+        setShowApplyModal(false);
+        fetchMyApplication();
+        if (user) fetchRoleDashboard(user.role);
+      } else {
+        showToast(data.detail || 'Xatolik yuz berdi', 'error');
+      }
+    } catch (err) {
+      showToast('Tarmoq xatosi', 'error');
+    } finally {
+      setIsSubmittingApp(false);
     }
   };
 
@@ -719,16 +797,68 @@ export default function App() {
                   </button>
                 )}
                 {(user?.role === 'LOGISTIC' || user?.role === 'LOGISTICS_COMPANY_OWNER') && (
-                  <button 
-                    onClick={() => setActiveTab('publish_load')}
-                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center space-x-1.5"
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>Yangi Yuk E'lon Qilish</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button 
+                      onClick={() => {
+                        setApplyForm({
+                          company_name: dashboardData.profile?.company_name || user?.full_name || '',
+                          contact_phone: dashboardData.profile?.phone || user?.phone || '',
+                          extra_phone: '',
+                          plan_code: 'STANDARD',
+                          payment_method: 'BANK_TRANSFER',
+                          comment: ''
+                        });
+                        setShowApplyModal(true);
+                      }}
+                      className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-2xl text-xs transition shadow-md flex items-center space-x-1.5 animate-pulse"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>Obunaga Ariza Jo'natish</span>
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('publish_load')}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center space-x-1.5"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Yangi Yuk E'lon Qilish</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
+
+            {/* Alert: Obuna to'lanmagan yoki kutilayotgan logist uchun ogohlantirish */}
+            {(user?.role === 'LOGISTIC' || user?.role === 'LOGISTICS_COMPANY_OWNER') && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-black text-amber-900">
+                      Yuk joylashtirish va Haydovchilar bilan bog'lanish uchun Obuna lozim!
+                    </h4>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Ariza yuboring va to'lov admin tomonidan tasdiqlanishi bilan profilingiz to'liq aktivlashtiriladi.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setApplyForm({
+                      company_name: dashboardData.profile?.company_name || user?.full_name || '',
+                      contact_phone: dashboardData.profile?.phone || user?.phone || '',
+                      extra_phone: '',
+                      plan_code: 'STANDARD',
+                      payment_method: 'BANK_TRANSFER',
+                      comment: ''
+                    });
+                    setShowApplyModal(true);
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs transition shadow-sm self-start sm:self-auto"
+                >
+                  Ariza Yuborish
+                </button>
+              </div>
+            )}
 
             {/* KPI Statistics Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1461,6 +1591,112 @@ export default function App() {
               </div>
             )}
 
+            {/* TAB SECTION: LOGISTICS SUBSCRIPTION APPLICATIONS (YANGI ARIZALAR) */}
+            <div className="bg-white rounded-3xl border border-amber-300 shadow-md p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-full uppercase tracking-wider">
+                      Yangi Arizalar
+                    </span>
+                    <h3 className="text-lg font-black text-slate-900">
+                      📝 Logistlardan Kelgan Obuna va To'lov Arizalari
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Logistika kompaniyasi obunani tanlab ariza yuborgan. To'lov amalga oshirilgach, "Tasdiqlash" tugmasini bosing — logist darhol aktivlashadi!
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
+                  Kutilayotgan: {adminApplications.filter(a => a.status === 'PENDING').length} ta
+                </span>
+              </div>
+
+              {adminApplications.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  Hozircha yangi arizalar mavjud emas.
+                </div>
+              ) : (
+                <div className="overflow-x-auto mt-4">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-amber-50/60 text-amber-950 uppercase tracking-wider font-bold">
+                      <tr>
+                        <th className="py-3 px-4 rounded-l-xl">Kompaniya & Mas'ul</th>
+                        <th className="py-3 px-4">Telefon</th>
+                        <th className="py-3 px-4">Tanlangan Tarif</th>
+                        <th className="py-3 px-4">To'lov Usuli</th>
+                        <th className="py-3 px-4">Ariza Holati</th>
+                        <th className="py-3 px-4">Sana</th>
+                        <th className="py-3 px-4 rounded-r-xl text-right">Admin Qarori</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {adminApplications.map((app) => (
+                        <tr key={app.id} className="hover:bg-slate-50 transition">
+                          <td className="py-3.5 px-4">
+                            <strong className="text-slate-900 text-sm block">{app.company_name}</strong>
+                            <span className="text-slate-400 text-[11px]">{app.user_name}</span>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-800">
+                            {app.contact_phone}
+                            {app.extra_phone && <span className="block text-[10px] text-slate-400">{app.extra_phone}</span>}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
+                              {app.plan_code}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-700">
+                            {app.payment_method}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {app.status === 'PENDING' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
+                                ⏳ Kutilmoqda
+                              </span>
+                            )}
+                            {app.status === 'APPROVED' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                                ✓ Tasdiqlangan (Aktiv)
+                              </span>
+                            )}
+                            {app.status === 'REJECTED' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">
+                                ✕ Rad etilgan
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-500">
+                            {new Date(app.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            {app.status === 'PENDING' ? (
+                              <div className="flex items-center justify-end space-x-2">
+                                <button
+                                  onClick={() => handleReviewApplication(app.id, 'APPROVE')}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs transition shadow-sm"
+                                >
+                                  ✓ Tasdiqlash & Faollashtirish
+                                </button>
+                                <button
+                                  onClick={() => handleReviewApplication(app.id, 'REJECT')}
+                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-xs transition"
+                                >
+                                  Rad etish
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Ko'rib chiqilgan</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {/* TAB SECTION: LOGISTICS COMPANIES (PAID / UNPAID) */}
             <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
@@ -2099,6 +2335,135 @@ export default function App() {
                   className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white rounded-xl shadow-lg shadow-emerald-500/20"
                 >
                   {t('btn_send')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Logistika Kompaniyasi Obuna Ariza Jo'natish Modali */}
+      {showApplyModal && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Obunaga Ariza Jo'natish</h3>
+                  <span className="text-xs text-slate-400">Admin tasdiqlagach to'liq imkoniyatlar ochiladi</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowApplyModal(false)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitApplication} className="mt-5 space-y-3.5">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Kompaniya nomi: <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Silk Road Logistics LLC"
+                  value={applyForm.company_name}
+                  onChange={(e) => setApplyForm({...applyForm, company_name: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Telefon raqam: <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="+998901234567"
+                    value={applyForm.contact_phone}
+                    onChange={(e) => setApplyForm({...applyForm, contact_phone: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Qo'shimcha telefon:</label>
+                  <input 
+                    type="text" 
+                    placeholder="+998931112233"
+                    value={applyForm.extra_phone}
+                    onChange={(e) => setApplyForm({...applyForm, extra_phone: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Qaysi obunani sotib olmoqchisiz: <span className="text-rose-500">*</span>
+                </label>
+                <select 
+                  value={applyForm.plan_code}
+                  onChange={(e) => setApplyForm({...applyForm, plan_code: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-black text-blue-700"
+                >
+                  <option value="START">Start Plan (199 000 so'm / oy - 5 tagacha yuk)</option>
+                  <option value="STANDARD">Standard Plan (399 000 so'm / oy - 20 tagacha yuk)</option>
+                  <option value="BUSINESS">Business Plan (699 000 so'm / oy - 100 tagacha yuk)</option>
+                  <option value="ENTERPRISE">Enterprise VIP (1 499 000 so'm / oy - Cheksiz)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">To'lov usuli:</label>
+                <select 
+                  value={applyForm.payment_method}
+                  onChange={(e) => setApplyForm({...applyForm, payment_method: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                >
+                  <option value="BANK_TRANSFER">Hisob-raqam orqali to'lov (Bank o'tkazmasi)</option>
+                  <option value="CLICK">Click orqali to'lov</option>
+                  <option value="PAYME">Payme orqali to'lov</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Qo'shimcha izoh / xabar:</label>
+                <textarea 
+                  rows="2"
+                  placeholder="Shartnoma tuzish, hisob-faktura yuborish haqida..."
+                  value={applyForm.comment}
+                  onChange={(e) => setApplyForm({...applyForm, comment: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs text-slate-800"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl text-[11px] text-amber-800 space-y-1 border border-amber-200">
+                <strong>🔒 Muhim:</strong>
+                <p>Arizangiz to'g'ridan-to'g'ri platforma rahbariga boradi. To'lov tasdiqlangach profilingiz to'liq aktivlashadi.</p>
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setShowApplyModal(false)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 font-bold text-xs text-slate-700 rounded-xl"
+                >
+                  Bekor qilish
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingApp}
+                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-amber-500/25"
+                >
+                  {isSubmittingApp ? "Yuborilmoqda..." : "Arizani Jo'natish"}
                 </button>
               </div>
             </form>

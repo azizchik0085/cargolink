@@ -95,12 +95,31 @@ async def create_load(
     db: AsyncSession = Depends(get_db)
 ):
     company_id = None
-    if current_user.role == UserRole.LOGISTICS_COMPANY_OWNER.value:
+    if current_user.role in [UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value]:
         stmt_comp = select(Company).where(Company.owner_id == current_user.id)
         res_comp = await db.execute(stmt_comp)
         company = res_comp.scalar_one_or_none()
-        if company:
-            company_id = company.id
+        
+        # Check if company is verified and has active paid subscription
+        if not company or company.verification_status != VerificationStatus.VERIFIED.value:
+            raise HTTPException(
+                status_code=403, 
+                detail="Yuk joylashtirish uchun avval Sozlamalar / Obuna bo'limidan ariza yuborishingiz va to'lov admin tomonidan tasdiqlanishi kerak!"
+            )
+            
+        now = datetime.utcnow()
+        stmt_sub = select(Subscription).where(
+            Subscription.company_id == company.id,
+            Subscription.status == SubscriptionStatus.ACTIVE.value,
+            Subscription.expires_at > now
+        )
+        active_sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+        if not active_sub:
+            raise HTTPException(
+                status_code=403,
+                detail="Obunangiz muddati tugagan yoki to'lanmagan. Iltimos, obuna arizasini yuboring va to'lovni amalga oshiring."
+            )
+        company_id = company.id
 
     new_load = Load(
         company_id=company_id,
