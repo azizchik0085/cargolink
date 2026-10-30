@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_token
 from app.core.dependencies import get_current_user
-from app.models.entities import User, Company, DriverProfile, UserRole, VerificationStatus, Subscription, SubscriptionPlan, SubscriptionStatus
+from app.models.entities import User, Company, DriverProfile, Vehicle, UserRole, VerificationStatus, Subscription, SubscriptionPlan, SubscriptionStatus
 from app.schemas.dto import UserRegisterRequest, UserLoginRequest, TokenResponse, UserResponse
 from datetime import datetime, timedelta
 
@@ -14,11 +14,48 @@ router = APIRouter(prefix="/auth", tags=["Authentication & Profiles"])
 
 @router.post("/register", response_model=TokenResponse)
 async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
-    # Check if phone exists
+    # 1. Bitta telefon raqam faqat bir marta ro'yxatdan o'tishi mumkin
     stmt = select(User).where(User.phone == req.phone)
     res = await db.execute(stmt)
     if res.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Phone number is already registered")
+        raise HTTPException(
+            status_code=400, 
+            detail="Ushbu telefon raqami allaqachon ro'yxatdan o'tgan! Bitta haydovchi faqat 1 marta ro'yxatdan o'tishi mumkin."
+        )
+
+    # 2. Haydovchi uchun mashina raqami va texpasport raqami majburiy va takrorlanmas (unikal) bo'lishi kerak
+    clean_plate = None
+    clean_tech_pass = None
+    if req.role in [UserRole.DRIVER.value, UserRole.VEHICLE_OWNER.value]:
+        if not req.plate_number or not req.plate_number.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Haydovchi ro'yxatdan o'tishi uchun mashina davlat raqamini kiritish majburiy!"
+            )
+        if not req.tech_passport_number or not req.tech_passport_number.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Haydovchi ro'yxatdan o'tishi uchun avtomobil texpasport raqamini kiritish majburiy!"
+            )
+        
+        clean_plate = req.plate_number.strip().upper()
+        clean_tech_pass = req.tech_passport_number.strip().upper()
+
+        # Mashina raqami oldin ro'yxatdan o'tganligini tekshirish
+        v_plate_stmt = select(Vehicle).where(Vehicle.plate_number == clean_plate)
+        if (await db.execute(v_plate_stmt)).scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ushbu mashina raqami ({clean_plate}) allaqachon tizimda ro'yxatdan o'tgan! Bitta mashinani qayta ro'yxatdan o'tkazish mumkin emas."
+            )
+
+        # Texpasport raqami oldin ro'yxatdan o'tganligini tekshirish
+        v_tech_stmt = select(Vehicle).where(Vehicle.tech_passport_number == clean_tech_pass)
+        if (await db.execute(v_tech_stmt)).scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ushbu texpasport raqami ({clean_tech_pass}) bilan avtomobil allaqachon ro'yxatdan o'tgan!"
+            )
 
     new_user = User(
         phone=req.phone,
@@ -68,6 +105,25 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
             verification_status=VerificationStatus.VERIFIED.value
         )
         db.add(driver_prof)
+
+        # Mashinani avtomatik ro'yxatdan o'tkazish (mashina raqami va texpasport bilan)
+        vehicle = Vehicle(
+            owner_id=new_user.id,
+            assigned_driver_id=new_user.id,
+            plate_number=clean_plate,
+            tech_passport_number=clean_tech_pass,
+            vehicle_type=req.vehicle_type or "Curtain-sided truck (Tent)",
+            make=req.vehicle_make or "Volvo",
+            model=req.vehicle_model or "FH 500",
+            max_weight_tons=req.max_weight_tons or 22.0,
+            max_volume_m3=req.max_volume_m3 or 92.0,
+            current_country="Uzbekistan",
+            current_city=req.city or "Tashkent",
+            preferred_destinations="Kazakhstan, Russia, Turkey",
+            verification_status=VerificationStatus.VERIFIED.value,
+            is_available=True
+        )
+        db.add(vehicle)
 
     await db.commit()
     await db.refresh(new_user)

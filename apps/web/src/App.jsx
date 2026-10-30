@@ -25,6 +25,13 @@ export default function App() {
   const [dashboardData, setDashboardData] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
+  // Admin Dashboard State
+  const [adminMetrics, setAdminMetrics] = useState(null);
+  const [adminLogistics, setAdminLogistics] = useState([]);
+  const [adminDrivers, setAdminDrivers] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminFilter, setAdminFilter] = useState('ALL'); // 'ALL', 'PAID', 'UNPAID', 'ACTIVE', 'INACTIVE'
+
   // Search & Filters
   const [searchOrigin, setSearchOrigin] = useState('');
   const [searchDest, setSearchDest] = useState('');
@@ -42,6 +49,12 @@ export default function App() {
   const [offerPrice, setOfferPrice] = useState('');
   const [offerComment, setOfferComment] = useState('');
 
+  // Payment Checkout Modal State
+  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentProvider, setPaymentProvider] = useState('CLICK'); // 'CLICK', 'PAYME', 'BANK_TRANSFER'
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
   // Auth Form State
   const [authForm, setAuthForm] = useState({
     phone: '',
@@ -49,7 +62,14 @@ export default function App() {
     full_name: '',
     role: 'DRIVER', // 'DRIVER', 'LOGISTIC', 'VEHICLE_OWNER', 'TRANSPORT_COMPANY'
     company_name: '',
-    city: 'Tashkent'
+    city: 'Tashkent',
+    plate_number: '',
+    tech_passport_number: '',
+    vehicle_type: 'Curtain-sided truck (Tent)',
+    vehicle_make: 'Volvo',
+    vehicle_model: 'FH 500',
+    max_weight_tons: 22,
+    max_volume_m3: 92
   });
 
   // Post Load Form State
@@ -108,12 +128,52 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
-        fetchRoleDashboard(data.role);
+        if (data.role === 'SUPER_ADMIN' || data.role === 'ADMIN') {
+          fetchAdminData();
+        } else {
+          fetchRoleDashboard(data.role);
+        }
       } else {
         logout();
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const fetchAdminData = async () => {
+    setAdminLoading(true);
+    try {
+      const [mRes, lRes, dRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/metrics`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE}/admin/logistics-clients`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE}/admin/drivers-list`, { headers: { 'Authorization': `Bearer ${token}` } }),
+      ]);
+      if (mRes.ok) setAdminMetrics(await mRes.json());
+      if (lRes.ok) setAdminLogistics(await lRes.json());
+      if (dRes.ok) setAdminDrivers(await dRes.json());
+    } catch (e) {
+      console.error("Admin data fetch error:", e);
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const handleToggleUserStatus = async (userId, action) => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${userId}/status?action=${action}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'Status yangilandi');
+        fetchAdminData();
+      } else {
+        showToast(data.detail || 'Xatolik', 'error');
+      }
+    } catch (e) {
+      showToast('Tarmoq xatosi', 'error');
     }
   };
 
@@ -178,6 +238,71 @@ export default function App() {
     }
   };
 
+  const fetchMySubscription = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/my`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMySubscription(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSubscribe = async (plan) => {
+    if (!user) {
+      showToast("Obuna bo'lish uchun tizimga kiring", 'error');
+      setAuthMode('login');
+      setShowAuthModal(true);
+      return;
+    }
+    if (user.role === 'DRIVER') {
+      showToast("Haydovchilar uchun barcha xizmatlar 100% bepul!", 'success');
+      return;
+    }
+    setSelectedPlanForPayment(plan);
+    setShowPaymentModal(true);
+  };
+
+  const executePayment = async () => {
+    if (!selectedPlanForPayment) return;
+    setIsProcessingPayment(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/subscribe`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          plan_code: selectedPlanForPayment.code,
+          payment_method: paymentProvider
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Tabriklaymiz! ${selectedPlanForPayment.name} tarifi 30 kunga faollashtirildi!`);
+        setShowPaymentModal(false);
+        fetchMySubscription();
+        if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') {
+          fetchAdminData();
+        } else {
+          fetchRoleDashboard(user.role);
+        }
+      } else {
+        showToast(data.detail || "To'lovda xatolik yuz berdi", 'error');
+      }
+    } catch (err) {
+      showToast('Tarmoq xatosi', 'error');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   const loginAs = async (phone, password) => {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
@@ -192,7 +317,12 @@ export default function App() {
         setUser(data.user);
         showToast(`Xush kelibsiz, ${data.user.full_name}!`);
         setShowAuthModal(false);
-        fetchRoleDashboard(data.user.role);
+        if (data.user.role === 'SUPER_ADMIN' || data.user.role === 'ADMIN') {
+          setActiveTab('admin');
+          fetchAdminData();
+        } else {
+          fetchRoleDashboard(data.user.role);
+        }
       } else {
         showToast(data.detail || 'Kirishda xatolik', 'error');
       }
@@ -396,18 +526,34 @@ export default function App() {
               <button onClick={() => switchLanguage('en')} className={`px-2 py-1 rounded transition ${lang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>EN</button>
             </div>
 
+            {/* Admin Boshqaruv Paneli (Platforma Egasi) */}
+            {user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') && (
+              <button 
+                onClick={() => {
+                  fetchAdminData();
+                  setActiveTab('admin');
+                }}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center space-x-1.5 ${activeTab === 'admin' ? 'bg-rose-600 text-white shadow-lg' : 'bg-slate-800 hover:bg-slate-700 text-rose-300'}`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+                <span>Admin Panel</span>
+              </button>
+            )}
+
             {user ? (
               <div className="flex items-center space-x-3">
-                <button 
-                  onClick={() => {
-                    fetchRoleDashboard(user.role);
-                    setActiveTab('dashboard');
-                  }}
-                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center space-x-1.5 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                >
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  <span>Kabinet</span>
-                </button>
+                {user.role !== 'SUPER_ADMIN' && (
+                  <button 
+                    onClick={() => {
+                      fetchRoleDashboard(user.role);
+                      setActiveTab('dashboard');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center space-x-1.5 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Kabinet</span>
+                  </button>
+                )}
                 <div className="text-right hidden sm:block">
                   <div className="text-sm font-bold text-white">{user.full_name}</div>
                   <div className="text-[11px] text-emerald-400 flex items-center justify-end space-x-1">
@@ -468,8 +614,22 @@ export default function App() {
             <span>{t('nav_vehicles')} ({vehicles.length})</span>
           </button>
 
+          {/* Admin Boshqaruv Paneli (Platforma Egasi) */}
+          {user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') && (
+            <button 
+              onClick={() => {
+                fetchAdminData();
+                setActiveTab('admin');
+              }}
+              className={`px-3.5 py-2 rounded-xl font-bold flex items-center space-x-2 transition ${activeTab === 'admin' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30' : 'text-rose-400 hover:text-white'}`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>👑 Admin Boshqaruv</span>
+            </button>
+          )}
+
           {/* Shaxsiy Kabinet - Kirgan foydalanuvchiga */}
-          {user && (
+          {user && user.role !== 'SUPER_ADMIN' && (
             <button 
               onClick={() => {
                 fetchRoleDashboard(user.role);
@@ -484,23 +644,13 @@ export default function App() {
 
           {/* FAQAT TIZIMGA KIRGAN HAYDOVCHI / TRANSPORT EGASI UCHUN KO'RINADIGAN MENYULAR */}
           {user && (user.role === 'DRIVER' || user.role === 'VEHICLE_OWNER') && (
-            <>
-              <button 
-                onClick={() => runSmartMatching(vehicles[0]?.id)}
-                className={`px-3.5 py-2 rounded-xl font-bold flex items-center space-x-2 transition ${activeTab === 'matching' ? 'bg-emerald-600 text-white shadow-md' : 'text-emerald-400 hover:text-white'}`}
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>{t('nav_matching')}</span>
-              </button>
-
-              <button 
-                onClick={() => setActiveTab('publish_truck')}
-                className={`px-3.5 py-2 rounded-xl font-bold flex items-center space-x-2 transition ${activeTab === 'publish_truck' ? 'bg-emerald-700 text-white shadow-md' : 'text-emerald-400 hover:text-white'}`}
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Fura Qo'shish (Bepul)</span>
-              </button>
-            </>
+            <button 
+              onClick={() => runSmartMatching(vehicles[0]?.id)}
+              className={`px-3.5 py-2 rounded-xl font-bold flex items-center space-x-2 transition ${activeTab === 'matching' ? 'bg-emerald-600 text-white shadow-md' : 'text-emerald-400 hover:text-white'}`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{t('nav_matching')}</span>
+            </button>
           )}
 
           {/* FAQAT TIZIMGA KIRGAN LOGISTIKA KOMPANIYASI / SHIPPERS UCHUN KO'RINADIGAN MENYULAR */}
@@ -801,13 +951,6 @@ export default function App() {
                 <h2 className="text-2xl font-extrabold text-slate-900">{t('truck_list_title')}</h2>
                 <p className="text-xs text-slate-500 mt-1">{t('truck_list_sub')}</p>
               </div>
-              <button 
-                onClick={() => setActiveTab('publish_truck')}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center space-x-2 self-start sm:self-auto"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Bepul Fura Qo'shish</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1159,17 +1302,522 @@ export default function App() {
                   </div>
 
                   <button 
-                    onClick={() => showToast("Obuna to'lov tizimi muvaffaqiyatli faollashtirildi!")}
-                    className="mt-8 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl text-xs transition shadow-lg shadow-blue-500/20"
+                    onClick={() => handleSubscribe(p)}
+                    className="mt-8 w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold rounded-2xl text-xs transition shadow-lg shadow-blue-500/20 flex items-center justify-center space-x-2"
                   >
-                    Obuna Bo'lish
+                    <CreditCard className="w-4 h-4" />
+                    <span>Obuna Bo'lish</span>
                   </button>
                 </div>
               ))}
             </div>
           </div>
         )}
+        {/* TAB 7: SUPER ADMIN / PLATFORM OWNER PANEL */}
+        {activeTab === 'admin' && (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
+          <div className="space-y-8 animate-fadeIn">
+            {/* Header banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white border border-rose-500/30 shadow-2xl relative overflow-hidden">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                <div>
+                  <div className="flex items-center space-x-3 mb-2">
+                    <span className="px-3.5 py-1 bg-rose-500/20 text-rose-400 font-extrabold text-xs rounded-full border border-rose-500/40 flex items-center space-x-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>PLATFORMA EGASI BOSHQARUV PANELI</span>
+                    </span>
+                    <span className="text-xs text-slate-300">
+                      Foydalanuvchi: <strong className="text-white">{user?.full_name}</strong>
+                    </span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+                    Moliya, Logistika va Haydovchilar Monitoringi
+                  </h1>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Qaysi logist pul to'lagan, qaysilari aktiv yoki muddati o'tgan, qancha haydovchi faol va jami tushum haqiqiy vaqtda (real-time).
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={fetchAdminData}
+                    disabled={adminLoading}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center space-x-2 shadow-lg shadow-rose-600/30"
+                  >
+                    <Activity className={`w-4 h-4 ${adminLoading ? 'animate-spin' : ''}`} />
+                    <span>Yangilash</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* KPI Cards */}
+            {adminMetrics && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 1. Logistika To'lovlari */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md transition">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-blue-600 uppercase tracking-wider">Logistika To'lovlari</span>
+                    <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-baseline space-x-2">
+                    <span className="text-3xl font-black text-slate-900">{adminMetrics.active_paid_subscriptions}</span>
+                    <span className="text-xs text-slate-500 font-bold">/ {adminMetrics.total_logistics} jami</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs pt-3 border-t border-slate-100">
+                    <span className="text-emerald-600 font-bold">✓ {adminMetrics.active_paid_subscriptions} to'lagan (Aktiv)</span>
+                    <span className="text-rose-600 font-bold">✕ {adminMetrics.unpaid_or_expired_logistics} to'lamagan</span>
+                  </div>
+                </div>
+
+                {/* 2. Haydovchilar Holati */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md transition">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-emerald-600 uppercase tracking-wider">Haydovchilar</span>
+                    <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Truck className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-baseline space-x-2">
+                    <span className="text-3xl font-black text-slate-900">{adminMetrics.active_drivers}</span>
+                    <span className="text-xs text-slate-500 font-bold">faol haydovchi</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs pt-3 border-t border-slate-100">
+                    <span className="text-slate-600 font-semibold">{adminMetrics.active_trucks_available} ta fura bo'sh</span>
+                    <span className="text-rose-600 font-bold">{adminMetrics.inactive_drivers} nofaol</span>
+                  </div>
+                </div>
+
+                {/* 3. Jami Tushum (Obunalar) */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md transition">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-purple-600 uppercase tracking-wider">Jami Obuna Tushumi</span>
+                    <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                      <DollarSign className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-baseline space-x-1">
+                    <span className="text-2xl font-black text-slate-900">
+                      {(adminMetrics.total_revenue_uzs / 1000000).toFixed(2)}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500">mln so'm</span>
+                  </div>
+                  <div className="mt-3 text-xs pt-3 border-t border-slate-100 text-slate-500">
+                    Logistlar oylik tarif to'lovlari
+                  </div>
+                </div>
+
+                {/* 4. Komissiya Siyosati */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md transition">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-emerald-600 uppercase tracking-wider">Komissiya</span>
+                    <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-baseline space-x-1">
+                    <span className="text-3xl font-black text-emerald-600">0.0%</span>
+                    <span className="text-xs font-bold text-slate-500">qat'iy 0 foiz</span>
+                  </div>
+                  <div className="mt-3 text-xs pt-3 border-t border-slate-100 text-emerald-700 font-bold">
+                    Haydovchilar: 100% Bepul
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB SECTION: LOGISTICS COMPANIES (PAID / UNPAID) */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 flex items-center space-x-2">
+                    <span>🏢 Logistika Kompaniyalari (To'lagan / To'lamagan)</span>
+                    <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                      {adminLogistics.length} ta
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Qaysi logistika kompaniyasi oylik obuna to'laganini va tarif muddatini to'liq ko'rish
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button 
+                    onClick={() => setAdminFilter('ALL')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${adminFilter === 'ALL' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    Hammasi ({adminLogistics.length})
+                  </button>
+                  <button 
+                    onClick={() => setAdminFilter('PAID')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${adminFilter === 'PAID' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                  >
+                    ✓ Pul to'lagan ({adminLogistics.filter(l => l.has_paid_subscription).length})
+                  </button>
+                  <button 
+                    onClick={() => setAdminFilter('UNPAID')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${adminFilter === 'UNPAID' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}
+                  >
+                    ✕ To'lamagan ({adminLogistics.filter(l => !l.has_paid_subscription).length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto mt-4">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold">
+                    <tr>
+                      <th className="py-3 px-4 rounded-l-xl">Kompaniya & Mas'ul</th>
+                      <th className="py-3 px-4">Telefon & Manzil</th>
+                      <th className="py-3 px-4">Obuna Holati</th>
+                      <th className="py-3 px-4">Tarif Rejasi</th>
+                      <th className="py-3 px-4">Muddati</th>
+                      <th className="py-3 px-4">Yuklar soni</th>
+                      <th className="py-3 px-4">Jami To'langan</th>
+                      <th className="py-3 px-4 rounded-r-xl text-right">Harakat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {adminLogistics
+                      .filter(l => {
+                        if (adminFilter === 'PAID') return l.has_paid_subscription;
+                        if (adminFilter === 'UNPAID') return !l.has_paid_subscription;
+                        return true;
+                      })
+                      .map((logist) => (
+                        <tr key={logist.company_id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-4 px-4">
+                            <div className="font-extrabold text-slate-900 text-sm">{logist.company_name}</div>
+                            <div className="text-slate-500 text-[11px] mt-0.5">{logist.owner_name}</div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="font-bold text-slate-800">{logist.owner_phone}</div>
+                            <div className="text-slate-400 text-[11px]">{logist.city}</div>
+                          </td>
+                          <td className="py-4 px-4">
+                            {logist.has_paid_subscription ? (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle className="w-3 h-3 mr-1" /> To'lagan (Aktiv)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
+                                <AlertCircle className="w-3 h-3 mr-1" /> To'lamagan / Muddati o'tgan
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className="font-extrabold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                              {logist.plan_name}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-slate-600">
+                            {logist.subscription_expires_at ? (
+                              <div>
+                                <span className="font-bold">{new Date(logist.subscription_expires_at).toLocaleDateString()}</span>
+                                <span className="text-[10px] text-slate-400 block">gacha amal qiladi</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className="font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                              {logist.total_loads_posted} ta
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 font-black text-slate-900">
+                            {logist.total_amount_paid_uzs > 0 ? (
+                              <span className="text-emerald-600">
+                                {(logist.total_amount_paid_uzs / 1000).toLocaleString()} so'm
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">0 so'm</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            {logist.owner_id && (
+                              <div className="flex items-center justify-end space-x-1.5">
+                                {logist.is_active ? (
+                                  <button
+                                    onClick={() => handleToggleUserStatus(logist.owner_id, 'DEACTIVATE')}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[11px] transition"
+                                  >
+                                    Bloklash
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleToggleUserStatus(logist.owner_id, 'ACTIVATE')}
+                                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-[11px] transition"
+                                  >
+                                    Faollashtirish
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* TAB SECTION: DRIVERS LIST (ACTIVE / INACTIVE) */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 flex items-center space-x-2">
+                    <span>🚛 Haydovchilar Boshqaruvi (Faol / Nofaol)</span>
+                    <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                      {adminDrivers.length} nafar
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Haydovchilar 100% bepul foydalanishadi. Bu yerda ularning faolligi, mashinalari va safarlari nazorat qilinadi.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                    Faol: {adminDrivers.filter(d => d.is_active).length}
+                  </span>
+                  <span className="text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200">
+                    Nofaol: {adminDrivers.filter(d => !d.is_active).length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto mt-4">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold">
+                    <tr>
+                      <th className="py-3 px-4 rounded-l-xl">Haydovchi</th>
+                      <th className="py-3 px-4">Telefon</th>
+                      <th className="py-3 px-4">Viloyat / Shahar</th>
+                      <th className="py-3 px-4">Holati</th>
+                      <th className="py-3 px-4">Avtomobillari</th>
+                      <th className="py-3 px-4">Safarlar</th>
+                      <th className="py-3 px-4">Reyting</th>
+                      <th className="py-3 px-4 rounded-r-xl text-right">Boshqaruv</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {adminDrivers.map((driver) => (
+                      <tr key={driver.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-4 px-4">
+                          <div className="font-extrabold text-slate-900 text-sm">{driver.full_name}</div>
+                          <div className="text-[10px] text-slate-400">
+                            Ro'yxat: {new Date(driver.registered_at).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 font-bold text-slate-800">
+                          {driver.phone}
+                        </td>
+                        <td className="py-4 px-4 text-slate-600">
+                          {driver.city}
+                        </td>
+                        <td className="py-4 px-4">
+                          {driver.is_active ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle className="w-3 h-3 mr-1" /> Faol
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
+                              <AlertCircle className="w-3 h-3 mr-1" /> Nofaol / Bloklangan
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="font-extrabold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                            {driver.vehicles_count} ta fura
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 font-bold text-slate-700">
+                          {driver.completed_trips} ta
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center space-x-1 text-amber-500 font-black">
+                            <Star className="w-3.5 h-3.5 fill-amber-400" />
+                            <span>{driver.rating}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <div className="flex items-center justify-end space-x-1.5">
+                            {driver.is_active ? (
+                              <button
+                                onClick={() => handleToggleUserStatus(driver.id, 'DEACTIVATE')}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[11px] transition"
+                              >
+                                Bloklash
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleToggleUserStatus(driver.id, 'ACTIVATE')}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-[11px] transition"
+                              >
+                                Faollashtirish
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Payment Checkout Modal for Logistics Subscriptions */}
+      {showPaymentModal && selectedPlanForPayment && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Obunani Faollashtirish</h3>
+                  <span className="text-xs text-slate-400">Xavfsiz to'lov va 30 kunlik to'liq a'zolik</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPaymentModal(false)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Selected Plan Summary Card */}
+            <div className="mt-5 p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                    Tanlangan Tarif
+                  </span>
+                  <h4 className="text-xl font-black text-slate-900 mt-1">{selectedPlanForPayment.name}</h4>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-black text-blue-700">
+                    {(selectedPlanForPayment.price_uzs / 1000).toLocaleString()} ming
+                  </span>
+                  <span className="text-xs text-slate-500 block">so'm / oy</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-4 text-xs font-semibold text-slate-700 border-t border-blue-100/80 pt-3">
+                <div className="flex items-center space-x-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>{selectedPlanForPayment.active_loads_limit} ta faol yuk</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>{selectedPlanForPayment.max_team_members} ta dispetcher</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>Furalar qidiruvi</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>0% komissiya</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Method Selector */}
+            <div className="mt-6">
+              <label className="text-xs font-bold text-slate-700 block mb-2">To'lov usulini tanlang:</label>
+              <div className="grid grid-cols-3 gap-3">
+                {/* Click */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('CLICK')}
+                  className={`p-3.5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1 ${
+                    paymentProvider === 'CLICK'
+                      ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <span className="font-black text-base text-blue-600">CLICK</span>
+                  <span className="text-[10px] text-slate-500 font-bold">Avtomatik</span>
+                </button>
+
+                {/* Payme */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('PAYME')}
+                  className={`p-3.5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1 ${
+                    paymentProvider === 'PAYME'
+                      ? 'border-teal-500 bg-teal-50/50 shadow-md ring-2 ring-teal-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <span className="font-black text-base text-teal-600">payme</span>
+                  <span className="text-[10px] text-slate-500 font-bold">Hamyon / Karta</span>
+                </button>
+
+                {/* Bank / Hisob-faktura */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('BANK_TRANSFER')}
+                  className={`p-3.5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1 ${
+                    paymentProvider === 'BANK_TRANSFER'
+                      ? 'border-slate-900 bg-slate-100 shadow-md ring-2 ring-slate-900/10'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <span className="font-black text-xs text-slate-900">HISOB-RAQAM</span>
+                  <span className="text-[10px] text-slate-500 font-bold">Yuridik shaxs</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Terms and guarantees */}
+            <div className="mt-5 p-3 rounded-xl bg-slate-50 text-[11px] text-slate-500 space-y-1 border border-slate-100">
+              <div className="flex items-center space-x-1.5 font-bold text-slate-700">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>100% Rasmiy Shartnoma va Elektron Chek</span>
+              </div>
+              <p>To'lov amalga oshirilishi bilan sizning kompaniyangiz tizimda "Pul to'lagan (Aktiv)" statusiga o'tadi va barcha yuk e'lonlari darhol faollashadi.</p>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 flex space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingPayment}
+                onClick={executePayment}
+                className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold rounded-2xl text-xs transition shadow-lg shadow-blue-500/25 flex items-center justify-center space-x-2"
+              >
+                {isProcessingPayment ? (
+                  <span>To'lov qilinmoqda...</span>
+                ) : (
+                  <>
+                    <span>To'lash ({selectedPlanForPayment.price_uzs.toLocaleString()} so'm)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Auth Modal (Login & Register) */}
       {showAuthModal && (
@@ -1269,6 +1917,86 @@ export default function App() {
                     className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
                   />
                 </div>
+
+                {/* Haydovchi uchun Mashina va Texpasport raqami majburiy */}
+                {(authForm.role === 'DRIVER' || authForm.role === 'VEHICLE_OWNER') && (
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl space-y-3">
+                    <div className="flex items-center space-x-1.5 text-xs font-extrabold text-emerald-800">
+                      <Truck className="w-4 h-4 text-emerald-600" />
+                      <span>Avtomobil va Texpasport Ma'lumotlari (1 marta ro'yxatdan o'tish)</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Davlat Raqami: <span className="text-rose-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          placeholder="01 A 777 AA"
+                          value={authForm.plate_number}
+                          onChange={(e) => setAuthForm({...authForm, plate_number: e.target.value.toUpperCase()})}
+                          className="w-full bg-white border border-slate-300 px-3 py-2 rounded-xl text-xs font-black text-slate-900 uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Texpasport Raqami: <span className="text-rose-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          placeholder="AAF 1234567"
+                          value={authForm.tech_passport_number}
+                          onChange={(e) => setAuthForm({...authForm, tech_passport_number: e.target.value.toUpperCase()})}
+                          className="w-full bg-white border border-slate-300 px-3 py-2 rounded-xl text-xs font-black text-slate-900 uppercase"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Marka & Model:</label>
+                        <input 
+                          type="text" 
+                          placeholder="Volvo FH 500"
+                          value={`${authForm.vehicle_make} ${authForm.vehicle_model}`}
+                          onChange={(e) => {
+                            const parts = e.target.value.split(' ');
+                            setAuthForm({
+                              ...authForm, 
+                              vehicle_make: parts[0] || 'Volvo',
+                              vehicle_model: parts.slice(1).join(' ') || 'Truck'
+                            });
+                          }}
+                          className="w-full bg-white border border-slate-300 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Kuzov turi:</label>
+                        <select 
+                          value={authForm.vehicle_type}
+                          onChange={(e) => setAuthForm({...authForm, vehicle_type: e.target.value})}
+                          className="w-full bg-white border border-slate-300 px-2 py-2 rounded-xl text-xs font-bold text-slate-800"
+                        >
+                          <option value="Curtain-sided truck (Tent)">Tent (Parda)</option>
+                          <option value="Refrigerated truck (Ref)">Refrijerator</option>
+                          <option value="Flatbed truck">Ochiq bortli</option>
+                          <option value="Tanker">Sitserna (Bak)</option>
+                          <option value="Tipper truck">Samosval</option>
+                          <option value="Container carrier">Konteynerovoz</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      🔒 Xavfsizlik: Bitta mashina va texpasport faqat bitta haydovchiga biriktiriladi.
+                    </p>
+                  </div>
+                )}
 
                 <button 
                   type="submit"

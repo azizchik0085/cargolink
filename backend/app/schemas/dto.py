@@ -20,6 +20,13 @@ class UserRegisterRequest(BaseModel):
     # Extra fields for Driver
     license_number: Optional[str] = None
     experience_years: Optional[int] = 3
+    plate_number: Optional[str] = None  # Mashina davlat raqami (masalan: 01 A 777 AA)
+    tech_passport_number: Optional[str] = None  # Texpasport raqami (masalan: AAF 1234567)
+    vehicle_type: Optional[str] = "Curtain-sided truck (Tent)"
+    vehicle_make: Optional[str] = "Volvo"
+    vehicle_model: Optional[str] = "FH 500"
+    max_weight_tons: Optional[float] = 22.0
+    max_volume_m3: Optional[float] = 92.0
 
 class UserLoginRequest(BaseModel):
     phone: str = Field(..., example="+998901234567")

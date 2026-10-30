@@ -162,7 +162,8 @@ class Vehicle(Base):
     make = Column(String(64), nullable=False)
     model = Column(String(64), nullable=True)
     year = Column(Integer, default=2021)
-    plate_number = Column(String(32), nullable=False)
+    plate_number = Column(String(32), nullable=False, unique=True, index=True)
+    tech_passport_number = Column(String(64), nullable=True, unique=True, index=True)
     
     max_weight_tons = Column(Float, nullable=False)
     max_volume_m3 = Column(Float, nullable=False)

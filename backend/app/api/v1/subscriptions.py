@@ -40,17 +40,29 @@ async def get_plans(db: AsyncSession = Depends(get_db)):
 @router.post("/subscribe")
 async def subscribe(
     req: SubscribeRequest,
-    current_user: User = Depends(require_roles([UserRole.LOGISTICS_COMPANY_OWNER.value, UserRole.SUPER_ADMIN.value])),
+    current_user: User = Depends(require_roles([UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value, UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value])),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Subscribe or upgrade to a plan using the pluggable payment adapter.
+    Subscribe or upgrade to a plan using Click, Payme, or Bank Transfer.
+    Automatically assigns/creates Company for the logistic user if none exists.
     """
+    # 1. Look for company owned by user
     stmt_comp = select(Company).where(Company.owner_id == current_user.id)
     res_comp = await db.execute(stmt_comp)
     company = res_comp.scalar_one_or_none()
+    
     if not company:
-        raise HTTPException(status_code=400, detail="Logistics company profile not found")
+        # Create company on the fly for logistics user
+        company = Company(
+            name=getattr(current_user, "company_name", None) or f"{current_user.full_name} Logistics",
+            owner_id=current_user.id,
+            city=current_user.city or "Tashkent",
+            country=current_user.country or "Uzbekistan",
+            verification_status="VERIFIED"
+        )
+        db.add(company)
+        await db.flush()
 
     stmt_p = select(SubscriptionPlan).where(SubscriptionPlan.code == req.plan_code)
     res_p = await db.execute(stmt_p)
@@ -105,14 +117,14 @@ async def subscribe(
 
 @router.get("/my")
 async def get_my_subscription(
-    current_user: User = Depends(require_roles([UserRole.LOGISTICS_COMPANY_OWNER.value, UserRole.SUPER_ADMIN.value])),
+    current_user: User = Depends(require_roles([UserRole.LOGISTIC.value, UserRole.LOGISTICS_COMPANY_OWNER.value, UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value])),
     db: AsyncSession = Depends(get_db)
 ):
     stmt_comp = select(Company).where(Company.owner_id == current_user.id)
     res_comp = await db.execute(stmt_comp)
     company = res_comp.scalar_one_or_none()
     if not company:
-        raise HTTPException(status_code=400, detail="Company not found")
+        return {"has_active_subscription": False}
 
     stmt_sub = select(Subscription).options(
         selectinload(Subscription.plan),
