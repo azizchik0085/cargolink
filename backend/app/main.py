@@ -55,9 +55,11 @@ async def on_startup():
 
 @app.get("/health")
 async def health_check():
+    db_scheme = settings.DATABASE_URL.split("://")[0] if "://" in settings.DATABASE_URL else "unknown"
     return {
         "status": "online",
         "app": settings.PROJECT_NAME,
+        "database_backend": db_scheme,
         "zero_commission_policy": True,
         "free_driver_access": True
     }
