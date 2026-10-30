@@ -519,10 +519,13 @@ export default function App() {
         fetchLoads();
         if (user) fetchRoleDashboard(user.role);
       } else {
-        showToast(data.detail || 'Xatolik', 'error');
+        const errorMsg = typeof data.detail === 'string' 
+          ? data.detail 
+          : (Array.isArray(data.detail) ? data.detail.map(d => d.msg || d).join(', ') : 'Yuk chop etishda xatolik yuz berdi');
+        showToast(errorMsg, 'error');
       }
     } catch (err) {
-      showToast('Xatolik', 'error');
+      showToast('Server bilan bog\'lanishda xatolik', 'error');
     }
   };
 
