@@ -29,7 +29,6 @@ services:
   - type: web
     name: cargolink-web
     env: static
-    region: frankfurt
     plan: free
     rootDir: apps/web
     buildCommand: "npm install && npm run build"
