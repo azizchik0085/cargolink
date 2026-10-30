@@ -1,0 +1,40 @@
+services:
+  # Backend API on Render Free Web Service
+  - type: web
+    name: cargolink-backend
+    env: python
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./cargolink.db
+      - key: SYNC_DATABASE_URL
+        value: sqlite:///./cargolink.db
+      - key: BACKEND_CORS_ORIGINS
+        value: '["*"]'
+      - key: FREE_DRIVER_ACCESS
+        value: "true"
+      - key: TRANSACTION_COMMISSION_PERCENT
+        value: "0.0"
+    healthCheckPath: /health
+
+  # React Web Frontend on Render Static Site
+  - type: web
+    name: cargolink-web
+    env: static
+    region: frankfurt
+    plan: free
+    rootDir: apps/web
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
