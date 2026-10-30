@@ -123,7 +123,21 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
+    let cleanMsg = msg;
+    if (typeof msg === 'object' && msg !== null) {
+      if (Array.isArray(msg)) {
+        cleanMsg = msg.map(m => (typeof m === 'object' && m !== null) ? (m.msg || JSON.stringify(m)) : String(m)).join(', ');
+      } else if (msg.msg) {
+        cleanMsg = msg.msg;
+      } else if (msg.detail) {
+        cleanMsg = typeof msg.detail === 'string' ? msg.detail : JSON.stringify(msg.detail);
+      } else {
+        cleanMsg = JSON.stringify(msg);
+      }
+    } else {
+      cleanMsg = String(msg || '');
+    }
+    setToast({ msg: cleanMsg, type });
     setTimeout(() => setToast(null), 4000);
   };
 
