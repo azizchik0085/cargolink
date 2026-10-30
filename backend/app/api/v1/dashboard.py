@@ -138,7 +138,11 @@ async def get_driver_dashboard(
     my_vehicles = (await db.execute(stmt_v)).scalars().all()
 
     # 3. Offers submitted by this driver
-    stmt_off = select(LoadOffer).options(selectinload(LoadOffer.load)).where(LoadOffer.driver_id == current_user.id).order_by(LoadOffer.created_at.desc())
+    stmt_off = select(LoadOffer).options(
+        selectinload(LoadOffer.load).selectinload(Load.company),
+        selectinload(LoadOffer.load).selectinload(Load.creator),
+        selectinload(LoadOffer.vehicle)
+    ).where(LoadOffer.driver_id == current_user.id).order_by(LoadOffer.created_at.desc())
     my_offers = (await db.execute(stmt_off)).scalars().all()
 
     # 4. Assigned and completed trips
@@ -205,11 +209,19 @@ async def get_driver_dashboard(
             "load_id": o.load_id,
             "cargo_title": o.load.cargo_title if o.load else "Cargo",
             "route": f"{o.load.origin_city}, {o.load.origin_country} ➔ {o.load.destination_city}, {o.load.destination_country}" if o.load else "",
+            "origin_full": f"{o.load.origin_city}, {o.load.origin_country} ({o.load.origin_address or ''})" if o.load else "",
+            "destination_full": f"{o.load.destination_city}, {o.load.destination_country} ({o.load.destination_address or ''})" if o.load else "",
+            "weight_volume": f"{((o.load.weight_kg / 1000.0) if o.load else 0):.1f} t / {o.load.volume_m3 if o.load else 0} m³",
+            "loading_date": o.load.loading_date.isoformat() if o.load and o.load.loading_date else None,
+            "shipper_name": o.load.company.name if (o.load and o.load.company) else (o.load.creator.full_name if o.load and o.load.creator else "Logistika"),
+            "shipper_phone": o.load.contact_phone if o.load else "",
+            "contact_name": o.load.contact_name if o.load else "",
             "proposed_price": o.proposed_price,
             "currency": o.currency,
             "pickup_date": o.pickup_date.isoformat(),
             "status": o.status,
             "comment": o.comment,
+            "vehicle_plate": o.vehicle.plate_number if o.vehicle else "",
             "created_at": o.created_at.isoformat()
         } for o in my_offers],
         "trip_history": [{
