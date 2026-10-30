@@ -4,7 +4,8 @@ import {
   MapPin, Calendar, ArrowRight, User, Phone, CheckCircle2, 
   DollarSign, Activity, Sparkles, LogOut, Lock, MessageSquare, AlertCircle,
   Filter, Globe, SlidersHorizontal, ChevronRight, X, Info, Check, Eye,
-  BarChart3, Navigation, Star, FileText, CheckCircle, Clock, Pause, Play
+  BarChart3, Navigation, Star, FileText, CheckCircle, Clock, Pause, Play,
+  Bell, Download, Printer
 } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 
@@ -47,6 +48,16 @@ export default function App() {
     comment: ''
   });
   const [isSubmittingApp, setIsSubmittingApp] = useState(false);
+
+  // Notifications & Offers Review Modal State
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [viewingLoadOffers, setViewingLoadOffers] = useState(null); // load object
+  const [currentLoadOffers, setCurrentLoadOffers] = useState([]);
+  const [loadingOffers, setLoadingOffers] = useState(false);
+  const [acceptedContract, setAcceptedContract] = useState(null); // Contract details modal
+  const [showContractModal, setShowContractModal] = useState(false);
 
   // Search & Filters
   const [searchOrigin, setSearchOrigin] = useState('');
@@ -147,8 +158,119 @@ export default function App() {
     fetchPlans();
     if (token) {
       fetchUserProfile();
+      fetchNotifications();
     }
   }, [token]);
+
+  // Periodic notification check (every 15 seconds)
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const fetchNotifications = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/notifications/`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+        setUnreadNotifCount(data.filter(n => !n.is_read).length);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const markNotifRead = async (notifId) => {
+    try {
+      await fetch(`${API_BASE}/notifications/${notifId}/read`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      fetchNotifications();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const openLoadOffers = async (load) => {
+    setViewingLoadOffers(load);
+    setLoadingOffers(true);
+    try {
+      const res = await fetch(`${API_BASE}/offers/load/${load.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentLoadOffers(data);
+      } else {
+        showToast("Takliflarni yuklab bo'lmadi", 'error');
+      }
+    } catch (err) {
+      showToast('Tarmoq xatosi', 'error');
+    } finally {
+      setLoadingOffers(false);
+    }
+  };
+
+  const handleAcceptOffer = async (offer) => {
+    try {
+      const res = await fetch(`${API_BASE}/offers/${offer.id}/status?action=ACCEPT`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        showToast("Taklif qabul qilindi va yuk holati tasdiqlandi!");
+        setViewingLoadOffers(null);
+        if (user) fetchRoleDashboard(user.role);
+        fetchLoads();
+        fetchNotifications();
+
+        // Shartnoma oynasini ochish
+        setAcceptedContract({
+          contractNumber: `AGR-${Date.now().toString().slice(-6)}`,
+          date: new Date().toLocaleDateString(),
+          cargoTitle: viewingLoadOffers.cargo_title,
+          route: `${viewingLoadOffers.origin} ➔ ${viewingLoadOffers.destination}`,
+          weightVolume: `${(viewingLoadOffers.weight_kg / 1000).toFixed(1)} t / ${viewingLoadOffers.volume_m3} m³`,
+          price: `${offer.proposed_price} ${offer.currency}`,
+          shipperName: user.company?.name || user.full_name,
+          shipperPhone: user.phone,
+          driverName: offer.driver_name,
+          driverPhone: offer.driver_phone,
+          vehiclePlate: offer.vehicle_plate || 'Aniqlanmoqda',
+          vehicleType: offer.vehicle_type || 'Tent'
+        });
+        setShowContractModal(true);
+      } else {
+        showToast('Xatolik yuz berdi', 'error');
+      }
+    } catch (e) {
+      showToast('Tarmoq xatosi', 'error');
+    }
+  };
+
+  const handleRejectOffer = async (offerId) => {
+    try {
+      const res = await fetch(`${API_BASE}/offers/${offerId}/status?action=REJECT`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        showToast("Taklif rad etildi");
+        if (viewingLoadOffers) openLoadOffers(viewingLoadOffers);
+        if (user) fetchRoleDashboard(user.role);
+      }
+    } catch (e) {
+      showToast('Tarmoq xatosi', 'error');
+    }
+  };
 
   const fetchUserProfile = async () => {
     try {
@@ -643,6 +765,69 @@ export default function App() {
               <button onClick={() => switchLanguage('en')} className={`px-2 py-1 rounded transition ${lang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>EN</button>
             </div>
 
+            {/* Notification Bell for Logged In User */}
+            {user && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition relative"
+                  title="Bildirishnomalar va Takliflar"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadNotifCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                      {unreadNotifCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                {showNotifDropdown && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-slate-900 animate-fadeIn">
+                    <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
+                      <span className="text-xs font-black flex items-center space-x-1.5">
+                        <Bell className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Bildirishnomalar ({notifications.length})</span>
+                      </span>
+                      <button onClick={() => setShowNotifDropdown(false)} className="text-slate-400 hover:text-white">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                          Hozircha yangi bildirishnomalar yo'q
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.id} 
+                            onClick={() => {
+                              markNotifRead(n.id);
+                              setShowNotifDropdown(false);
+                              setActiveTab('dashboard');
+                              if (user) fetchRoleDashboard(user.role);
+                            }}
+                            className={`p-3.5 hover:bg-slate-50 transition cursor-pointer ${!n.is_read ? 'bg-blue-50/60 font-bold' : 'opacity-80'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <span className="text-xs font-black text-slate-900">{n.title}</span>
+                              <span className="text-[10px] text-slate-400">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 leading-snug">{n.message}</p>
+                            <span className="text-[10px] text-blue-600 font-bold mt-1.5 inline-block">
+                              ➔ Kabinetda ko'rish
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Admin Boshqaruv Paneli (Platforma Egasi) */}
             {user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') && (
               <button 
@@ -1011,7 +1196,19 @@ export default function App() {
                               {l.status}
                             </span>
                           </td>
-                          <td className="py-3 px-3 font-bold text-blue-600">{l.offers_count} ta</td>
+                          <td className="py-3 px-3 font-bold text-blue-600">
+                            {l.offers_count > 0 ? (
+                              <button
+                                onClick={() => openLoadOffers(l)}
+                                className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold rounded-xl transition flex items-center space-x-1 shadow-sm"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>{l.offers_count} ta taklifni ko'rish</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-400">0 ta</span>
+                            )}
+                          </td>
                           <td className="py-3 px-3">
                             <div className="flex items-center space-x-1.5">
                               <button 
@@ -2447,6 +2644,212 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VIEW LOAD OFFERS (Takliflarni Ko'rib Chiqish & Ma'qul bo'lsa Shartnoma Tuzish) */}
+      {viewingLoadOffers && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-slate-100 animate-fadeIn">
+            {/* Header */}
+            <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <span className="text-xs bg-blue-600 px-2.5 py-0.5 rounded-full font-bold">
+                  {viewingLoadOffers.cargo_title}
+                </span>
+                <h3 className="text-base font-black mt-1">Haydovchilardan Kelgan Takliflar</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {viewingLoadOffers.origin} ➔ {viewingLoadOffers.destination} • Asl narx: ${viewingLoadOffers.price}
+                </p>
+              </div>
+              <button onClick={() => setViewingLoadOffers(null)} className="text-slate-400 hover:text-white p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Offers List */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {loadingOffers ? (
+                <div className="py-12 text-center">
+                  <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-xs text-slate-500">Takliflar yuklanmoqda...</p>
+                </div>
+              ) : currentLoadOffers.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">
+                  <Package className="w-12 h-12 mx-auto text-slate-300 mb-2" />
+                  <p className="font-bold text-sm">Hali hech qanday haydovchi taklif yubormagan</p>
+                </div>
+              ) : (
+                currentLoadOffers.map((off) => (
+                  <div key={off.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-black text-slate-900 text-sm">{off.driver_name}</span>
+                          <span className="text-xs text-slate-500 font-mono">({off.driver_phone})</span>
+                          {off.vehicle_plate && (
+                            <span className="bg-slate-900 text-white font-mono text-[10px] font-bold px-1.5 py-0.5 rounded">
+                              {off.vehicle_plate}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500">
+                          Taklif yuborilgan: {new Date(off.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-emerald-600">${off.proposed_price}</span>
+                        <span className="text-xs text-slate-400 block">{off.currency}</span>
+                      </div>
+                    </div>
+
+                    {off.comment && (
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200">
+                        <strong>Haydovchi izohi:</strong> "{off.comment}"
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${
+                          off.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800' :
+                          off.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {off.status === 'ACCEPTED' ? '✓ QABUL QILINGAN' : off.status === 'REJECTED' ? '✕ RAD ETILGAN' : '⏳ KUTILMOQDA'}
+                        </span>
+                      </div>
+
+                      {off.status === 'PENDING' && (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleRejectOffer(off.id)}
+                            className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition"
+                          >
+                            Rad etish
+                          </button>
+                          <button
+                            onClick={() => handleAcceptOffer(off)}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs transition shadow-md flex items-center space-x-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>✓ Ma'qul (Shartnoma tuzish)</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RASMIY LOGISTIKA SHARTNOMASI (ELEKTRON BITIM) */}
+      {showContractModal && acceptedContract && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border border-slate-100 animate-fadeIn">
+            {/* Header */}
+            <div className="p-5 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-white/10 rounded-2xl">
+                  <FileText className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">XALQARO YUK TASHISH SHARTNOMASI</h3>
+                  <p className="text-xs text-blue-200">Raqam: #{acceptedContract.contractNumber} • Sana: {acceptedContract.date}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowContractModal(false)} className="text-white/70 hover:text-white p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Shartnoma Kontenti */}
+            <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-800 leading-relaxed font-sans">
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center space-x-3 text-emerald-900">
+                <CheckCircle className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+                <div>
+                  <strong className="block text-sm">Taklif muvaffaqiyatli qabul qilindi!</strong>
+                  <span>Tomonlar o'rtasida to'g'ridan-to'g'ri (0% komissiya) yuk tashish bitimi tuzildi.</span>
+                </div>
+              </div>
+
+              {/* Shartnoma tomonlari */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">BUYURTMACHI (LOGIST / YUK EGASI)</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{acceptedContract.shipperName}</div>
+                  <div className="text-slate-600 mt-0.5">Tel: <strong>{acceptedContract.shipperPhone}</strong></div>
+                  <div className="text-emerald-600 font-bold text-[11px] mt-1">✓ Tasdiqlangan Logistika Kompaniyasi</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">IJROCHI (HAYDOVCHI / TASHUVCHI)</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{acceptedContract.driverName}</div>
+                  <div className="text-slate-600 mt-0.5">Tel: <strong>{acceptedContract.driverPhone}</strong></div>
+                  <div className="text-slate-700 font-mono text-[11px] mt-1">
+                    Avto: <strong>{acceptedContract.vehiclePlate}</strong> ({acceptedContract.vehicleType})
+                  </div>
+                </div>
+              </div>
+
+              {/* Yuk tafsilotlari */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                <div className="bg-slate-100 px-4 py-2 font-bold text-slate-700 uppercase text-[11px]">
+                  Yuk va Tashish Shartlari
+                </div>
+                <div className="divide-y divide-slate-100">
+                  <div className="grid grid-cols-3 p-3">
+                    <span className="text-slate-500">Yuk nomi:</span>
+                    <span className="col-span-2 font-bold text-slate-900">{acceptedContract.cargoTitle}</span>
+                  </div>
+                  <div className="grid grid-cols-3 p-3">
+                    <span className="text-slate-500">Marshrut:</span>
+                    <span className="col-span-2 font-bold text-slate-900">{acceptedContract.route}</span>
+                  </div>
+                  <div className="grid grid-cols-3 p-3">
+                    <span className="text-slate-500">Hajm / Og'irlik:</span>
+                    <span className="col-span-2 font-bold text-slate-900">{acceptedContract.weightVolume}</span>
+                  </div>
+                  <div className="grid grid-cols-3 p-3 bg-emerald-50/50">
+                    <span className="text-slate-700 font-bold">Kelishilgan narx:</span>
+                    <span className="col-span-2 font-black text-emerald-700 text-sm">{acceptedContract.price}</span>
+                  </div>
+                  <div className="grid grid-cols-3 p-3">
+                    <span className="text-slate-500">Platforma komissiyasi:</span>
+                    <span className="col-span-2 font-black text-emerald-600">0% (Hech qanday to'lov olinmaydi)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Qonuniy bandlar */}
+              <div className="space-y-1 text-slate-500 text-[11px]">
+                <p>1. Tashuvchi belgilangan manzilga yukni xavfsiz va o'z vaqtida yetkazish majburiyatini oladi.</p>
+                <p>2. Yuk egasi yuk topshirilganidan keyin kelishilgan to'lovni bevosita haydovchiga to'lab beradi.</p>
+                <p>3. Ushbu elektron shartnoma CARGOLINK platformasida ikki tomonlama tasdiqlandi.</p>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs transition flex items-center space-x-1.5 shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Chop etish (PDF)</span>
+              </button>
+
+              <button
+                onClick={() => setShowContractModal(false)}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-xs transition shadow-md"
+              >
+                Tushunarli & Yopish
+              </button>
+            </div>
           </div>
         </div>
       )}
