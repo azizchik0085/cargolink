@@ -8,7 +8,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.entities import (
-    Load, User, Company, UserRole, LoadStatus, Subscription, SubscriptionStatus, OrderStatusHistory
+    Load, User, Company, UserRole, LoadStatus, Subscription, SubscriptionStatus, OrderStatusHistory, VerificationStatus
 )
 from app.schemas.dto import LoadCreateRequest, LoadResponse
 
