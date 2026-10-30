@@ -783,7 +783,8 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
         
         {/* TAB: PERSONAL ROLE-BASED DASHBOARD */}
-        {activeTab === 'dashboard' && dashboardData && (
+        {activeTab === 'dashboard' && (
+          dashboardData ? (
           <div className="space-y-8 animate-fadeIn">
             {/* Dashboard Header Bar */}
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl border border-slate-800">
@@ -1057,6 +1058,13 @@ export default function App() {
               </div>
             )}
           </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm">
+              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <h3 className="text-base font-extrabold text-slate-800">Shaxsiy kabinet ma'lumotlari yuklanmoqda...</h3>
+              <p className="text-xs text-slate-500 mt-1">Iltimos, kuting</p>
+            </div>
+          )
         )}
 
         {/* TAB 1: LOADS MARKETPLACE */}
