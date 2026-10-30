@@ -144,6 +144,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+        fetchMyApplication();
         if (data.role === 'SUPER_ADMIN' || data.role === 'ADMIN') {
           fetchAdminData();
         } else {
@@ -827,8 +828,74 @@ export default function App() {
               </div>
             </div>
 
+            {/* Ariza Holati Kartasi (Agar ariza yuborilgan bo'lsa) */}
+            {myApplication && myApplication.has_application && (
+              <div className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start space-x-3.5">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black ${
+                    myApplication.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
+                    myApplication.status === 'REJECTED' ? 'bg-rose-100 text-rose-700' :
+                    'bg-amber-100 text-amber-700'
+                  }`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Arizangiz Holati:</span>
+                      {myApplication.status === 'PENDING' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 animate-pulse">
+                          ⏳ Kutilmoqda (Admin ko'rib chiqmoqda)
+                        </span>
+                      )}
+                      {myApplication.status === 'APPROVED' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800">
+                          ✓ Tasdiqlangan va Faollashtirilgan
+                        </span>
+                      )}
+                      {myApplication.status === 'REJECTED' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-800">
+                          ✕ Rad etilgan
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-600 mt-1 space-x-3">
+                      <span>Kompaniya: <strong>{myApplication.company_name}</strong></span>
+                      <span>•</span>
+                      <span>Tanlangan tarif: <strong className="text-blue-600">{myApplication.plan_code}</strong></span>
+                      <span>•</span>
+                      <span>Sana: {new Date(myApplication.created_at).toLocaleDateString()}</span>
+                    </div>
+                    {myApplication.status === 'PENDING' && (
+                      <p className="text-[11px] text-amber-700 mt-1">
+                        Sizning arizangiz adminga yetib borgan. To'lov tasdiqlangach barcha imkoniyatlar avtomatik ochiladi.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {myApplication.status !== 'APPROVED' && (
+                  <button
+                    onClick={() => {
+                      setApplyForm({
+                        company_name: myApplication.company_name || dashboardData?.profile?.company_name || '',
+                        contact_phone: myApplication.contact_phone || dashboardData?.profile?.phone || '',
+                        extra_phone: '',
+                        plan_code: myApplication.plan_code || 'STANDARD',
+                        payment_method: 'BANK_TRANSFER',
+                        comment: ''
+                      });
+                      setShowApplyModal(true);
+                    }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+                  >
+                    Qayta Ariza Yuborish
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Alert: Obuna to'lanmagan yoki kutilayotgan logist uchun ogohlantirish */}
-            {(user?.role === 'LOGISTIC' || user?.role === 'LOGISTICS_COMPANY_OWNER') && (
+            {(user?.role === 'LOGISTIC' || user?.role === 'LOGISTICS_COMPANY_OWNER') && (!myApplication || !myApplication.has_application) && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-start space-x-3">
                   <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
