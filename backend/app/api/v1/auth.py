@@ -12,10 +12,31 @@ from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/auth", tags=["Authentication & Profiles"])
 
+def normalize_phone_number(phone: str) -> str:
+    """O'zbekiston va xalqaro raqamlarni bir xil formatga (+998XXXXXXXXX) keltirish"""
+    if not phone:
+        return ""
+    cleaned = ''.join(c for c in phone if c.isdigit() or c == '+')
+    if not cleaned.startswith('+'):
+        if cleaned.startswith('998'):
+            cleaned = '+' + cleaned
+        elif len(cleaned) == 9:
+            cleaned = '+998' + cleaned
+        else:
+            cleaned = '+' + cleaned
+    return cleaned
+
 @router.post("/register", response_model=TokenResponse)
 async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
+    clean_phone = normalize_phone_number(req.phone)
+    if not clean_phone or len(clean_phone) < 9:
+        raise HTTPException(
+            status_code=400,
+            detail="Telefon raqami noto'g'ri kiritildi!"
+        )
+
     # 1. Bitta telefon raqam faqat bir marta ro'yxatdan o'tishi mumkin
-    stmt = select(User).where(User.phone == req.phone)
+    stmt = select(User).where(User.phone == clean_phone)
     res = await db.execute(stmt)
     if res.scalar_one_or_none():
         raise HTTPException(
@@ -58,7 +79,7 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
             )
 
     new_user = User(
-        phone=req.phone,
+        phone=clean_phone,
         hashed_password=get_password_hash(req.password),
         full_name=req.full_name,
         role=req.role,
@@ -132,12 +153,14 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: UserLoginRequest, db: AsyncSession = Depends(get_db)):
-    stmt = select(User).where(User.phone == req.phone)
+    clean_phone = normalize_phone_number(req.phone)
+    # Telefon raqamni toza ko'rinishda (+998...) yoki foydalanuvchi kiritgan asl holatida qidirish
+    stmt = select(User).where((User.phone == clean_phone) | (User.phone == req.phone))
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid phone number or password")
+        raise HTTPException(status_code=401, detail="Telefon raqam yoki parol noto'g'ri kiritildi")
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Your account has been deactivated")

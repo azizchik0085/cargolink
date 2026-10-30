@@ -384,12 +384,28 @@ export default function App() {
     }
   };
 
+  const normalizePhone = (phone) => {
+    if (!phone) return '';
+    let cleaned = phone.toString().replace(/[^\d+]/g, '');
+    if (!cleaned.startsWith('+')) {
+      if (cleaned.startsWith('998')) {
+        cleaned = '+' + cleaned;
+      } else if (cleaned.length === 9) {
+        cleaned = '+998' + cleaned;
+      } else {
+        cleaned = '+' + cleaned;
+      }
+    }
+    return cleaned;
+  };
+
   const loginAs = async (phone, password) => {
     try {
+      const cleanPhone = normalizePhone(phone);
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password })
+        body: JSON.stringify({ phone: cleanPhone, password })
       });
       const data = await res.json();
       if (res.ok) {
@@ -415,10 +431,11 @@ export default function App() {
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
+      const cleanPhone = normalizePhone(authForm.phone);
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
+        body: JSON.stringify({ ...authForm, phone: cleanPhone })
       });
       const data = await res.json();
       if (res.ok) {
