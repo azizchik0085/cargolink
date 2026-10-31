@@ -33,6 +33,15 @@
     "plugins": [
       "expo-router"
     ],
-    "scheme": "cargolink"
+    "scheme": "cargolink",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "65337c9d-4537-4f7b-9716-8ac6948c5794"
+      }
+    },
+    "owner": "azizbek0085"
   }
 }
