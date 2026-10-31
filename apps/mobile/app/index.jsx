@@ -4,7 +4,7 @@ import {
   TextInput, SafeAreaView, StatusBar, ActivityIndicator, Modal, ScrollView, Alert 
 } from 'react-native';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = 'https://uzcargo.onrender.com/api/v1';
 
 export default function MobileApp() {
   const [user, setUser] = useState(null); // null if guest
