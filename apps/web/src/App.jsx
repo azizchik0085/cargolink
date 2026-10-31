@@ -437,9 +437,12 @@ export default function App() {
 
   const fetchVehicles = async () => {
     try {
-      const res = await fetch(`${API_BASE}/vehicles/`);
-      const data = await res.json();
-      setVehicles(data);
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const res = await fetch(`${API_BASE}/vehicles/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setVehicles(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error(err);
     }

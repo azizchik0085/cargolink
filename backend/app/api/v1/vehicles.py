@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_roles
+from app.core.dependencies import get_current_user, get_current_user_optional, require_roles
 from app.models.entities import Vehicle, User, Company, Subscription, SubscriptionStatus, UserRole, VerificationStatus
 from app.schemas.dto import VehicleCreateRequest, VehicleResponse
 
@@ -22,7 +22,7 @@ async def list_vehicles(
     has_temp: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
     """
