@@ -458,13 +458,13 @@
     document.getElementById("u-id").innerText = "ID: " + (paramUid || user.id);
     document.getElementById("u-avatar").innerText = (user.first_name || "N")[0].toUpperCase();
 
-    // Fetch real-time balance from cloud sync
+    // Fetch real-time balance directly from backend API
     const uidStr = String(user.id);
-    fetch("https://api.restful-api.dev/objects/ff808181a09d98f701a19871db4b01c2?t=" + Date.now())
+    fetch(`https://uzcargo.onrender.com/api/v1/nakrutka/balance/${uidStr}`)
       .then(res => res.json())
       .then(result => {
-        if (result && result.data && result.data[uidStr] !== undefined) {
-          const liveBalance = Number(result.data[uidStr]);
+        if (result && result.balance !== undefined) {
+          const liveBalance = Number(result.balance);
           document.getElementById("u-balance").innerText = liveBalance.toLocaleString("ru-RU") + " so'm";
         }
       })
