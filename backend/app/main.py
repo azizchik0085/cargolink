@@ -63,3 +63,19 @@ async def health_check():
         "zero_commission_policy": True,
         "free_driver_access": True
     }
+
+from pydantic import BaseModel
+class NakrutkaSync(BaseModel):
+    user_id: int
+    balance: int
+
+nakrutka_db = {8327968713: 23500}
+
+@app.get("/api/v1/nakrutka/balance/{user_id}")
+def get_user_balance(user_id: int):
+    return {"user_id": user_id, "balance": nakrutka_db.get(user_id, 0)}
+
+@app.post("/api/v1/nakrutka/sync")
+def sync_user_balance(data: NakrutkaSync):
+    nakrutka_db[data.user_id] = data.balance
+    return {"status": "ok", "balance": data.balance}
