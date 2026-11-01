@@ -446,13 +446,21 @@
     tg.expand();
     tg.ready();
 
-    // User data from Telegram
+    // User data from Telegram and URL params
     const initDataUnsafe = tg.initDataUnsafe || {};
     const user = initDataUnsafe.user || { id: 7777777, first_name: "Azizbek", username: "user" };
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramUid = urlParams.get('uid');
+    const paramBalance = urlParams.get('b');
+
     document.getElementById("u-name").innerText = user.first_name || "Mijoz";
-    document.getElementById("u-id").innerText = "ID: " + user.id;
+    document.getElementById("u-id").innerText = "ID: " + (paramUid || user.id);
     document.getElementById("u-avatar").innerText = (user.first_name || "N")[0].toUpperCase();
+
+    if (paramBalance !== null && paramBalance !== undefined) {
+      document.getElementById("u-balance").innerText = Number(paramBalance).toLocaleString("ru-RU") + " so'm";
+    }
 
     // Default services data
     const servicesData = {
