@@ -458,9 +458,17 @@
     document.getElementById("u-id").innerText = "ID: " + (paramUid || user.id);
     document.getElementById("u-avatar").innerText = (user.first_name || "N")[0].toUpperCase();
 
-    if (paramBalance !== null && paramBalance !== undefined) {
-      document.getElementById("u-balance").innerText = Number(paramBalance).toLocaleString("ru-RU") + " so'm";
-    }
+    // Fetch real-time balance from cloud sync
+    const uidStr = String(user.id);
+    fetch("https://api.restful-api.dev/objects/ff808181a09d98f701a19871db4b01c2?t=" + Date.now())
+      .then(res => res.json())
+      .then(result => {
+        if (result && result.data && result.data[uidStr] !== undefined) {
+          const liveBalance = Number(result.data[uidStr]);
+          document.getElementById("u-balance").innerText = liveBalance.toLocaleString("ru-RU") + " so'm";
+        }
+      })
+      .catch(err => console.error("Balance fetch error:", err));
 
     // Default services data
     const servicesData = {
