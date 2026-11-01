@@ -2,12 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+import asyncio
+import logging
 
 from app.core.config import settings
 from app.core.seed import seed_initial_data
 from app.api.v1 import (
     auth, loads, vehicles, offers, search, subscriptions, chat, admin, notifications, dashboard
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -45,13 +49,22 @@ async def root():
         "status": "online",
         "swagger_docs": "/docs",
         "health": "/health",
-        "zero_commission_policy": True,
-        "free_driver_access": True
+        "nakrutka_bot": "running 24/7"
     }
+
+async def run_nakrutka_bot():
+    try:
+        from nakrutka_service.bot import bot, dp, main as bot_main
+        logger.info("Starting 24/7 Nakrutka Telegram Bot in background...")
+        await bot_main()
+    except Exception as e:
+        logger.error(f"Error in 24/7 Nakrutka Bot: {e}")
 
 @app.on_event("startup")
 async def on_startup():
     await seed_initial_data()
+    # Launch Nakrutka Bot 24/7 in background
+    asyncio.create_task(run_nakrutka_bot())
 
 @app.get("/health")
 async def health_check():
@@ -60,22 +73,5 @@ async def health_check():
         "status": "online",
         "app": settings.PROJECT_NAME,
         "database_backend": db_scheme,
-        "zero_commission_policy": True,
-        "free_driver_access": True
+        "nakrutka_bot": "active"
     }
-
-from pydantic import BaseModel
-class NakrutkaSync(BaseModel):
-    user_id: int
-    balance: int
-
-nakrutka_db = {8327968713: 23500}
-
-@app.get("/api/v1/nakrutka/balance/{user_id}")
-def get_user_balance(user_id: int):
-    return {"user_id": user_id, "balance": nakrutka_db.get(user_id, 0)}
-
-@app.post("/api/v1/nakrutka/sync")
-def sync_user_balance(data: NakrutkaSync):
-    nakrutka_db[data.user_id] = data.balance
-    return {"status": "ok", "balance": data.balance}
