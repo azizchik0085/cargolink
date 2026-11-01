@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Nakrutka SMM Studio</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --card-bg: rgba(22, 29, 47, 0.85);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #38bdf8;
+      --primary-gradient: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+      --accent-pink: #ec4899;
+      --accent-purple: #8b5cf6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --green: #10b981;
+      --glass: rgba(15, 23, 42, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      padding: 16px;
+      padding-bottom: 90px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background blur circles */
+    .glow-circle {
+      position: fixed;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      filter: blur(100px);
+      z-index: 0;
+      pointer-events: none;
+    }
+    .glow-1 {
+      top: -40px;
+      right: -40px;
+      background: rgba(14, 165, 233, 0.25);
+    }
+    .glow-2 {
+      bottom: 80px;
+      left: -60px;
+      background: rgba(139, 92, 246, 0.2);
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* Header Profile Card */
+    .user-header {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+    }
+
+    .user-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .user-id {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .balance-badge {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 8px 14px;
+      border-radius: 14px;
+      text-align: right;
+    }
+
+    .balance-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--green);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .balance-value {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    /* Platform Tabs */
+    .platforms {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .plat-tab {
+      background: var(--glass);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 12px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .plat-tab.active {
+      background: var(--primary-gradient);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(14, 165, 233, 0.35);
+    }
+
+    .plat-tab .icon {
+      font-size: 24px;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .plat-tab .label {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* Section Title */
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Services List */
+    .services-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .service-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .service-card:active {
+      transform: scale(0.98);
+    }
+
+    .service-card.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary), 0 8px 24px rgba(14, 165, 233, 0.25);
+      background: rgba(30, 41, 69, 0.95);
+    }
+
+    .srv-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+
+    .srv-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      flex: 1;
+      padding-right: 10px;
+    }
+
+    .srv-price {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    .srv-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+
+    .srv-limits {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    /* Order Form */
+    .order-form {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 18px;
+      margin-top: 14px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .input-group {
+      margin-bottom: 14px;
+    }
+
+    .input-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .input-field {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field:focus {
+      border-color: var(--primary);
+    }
+
+    .calc-box {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .calc-total {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--green);
+    }
+
+    .btn-submit {
+      width: 100%;
+      background: var(--primary-gradient);
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      padding: 15px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(14, 165, 233, 0.4);
+      transition: all 0.2s;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.98);
+      filter: brightness(0.9);
+    }
+
+    /* Bottom Nav Bar */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(11, 15, 25, 0.92);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-around;
+      padding: 10px 0 16px 0;
+      z-index: 100;
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+
+    .nav-item.active {
+      color: var(--primary);
+    }
+
+    .nav-item .nav-icon {
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-circle glow-1"></div>
+  <div class="glow-circle glow-2"></div>
+
+  <div class="container">
+    <!-- User Profile Header -->
+    <div class="user-header">
+      <div class="user-info">
+        <div class="avatar" id="u-avatar">N</div>
+        <div>
+          <div class="user-name" id="u-name">Mijoz</div>
+          <div class="user-id" id="u-id">ID: 12345678</div>
+        </div>
+      </div>
+      <div class="balance-badge">
+        <div class="balance-label">Balans</div>
+        <div class="balance-value" id="u-balance">0 so'm</div>
+      </div>
+    </div>
+
+    <!-- Platform Selection Tabs -->
+    <div class="platforms">
+      <div class="plat-tab active" onclick="switchPlatform('telegram')">
+        <span class="icon">✈️</span>
+        <span class="label">Telegram</span>
+      </div>
+      <div class="plat-tab" onclick="switchPlatform('instagram')">
+        <span class="icon">📸</span>
+        <span class="label">Instagram</span>
+      </div>
+      <div class="plat-tab" onclick="switchPlatform('tiktok')">
+        <span class="icon">🎵</span>
+        <span class="label">TikTok</span>
+      </div>
+      <div class="plat-tab" onclick="switchPlatform('youtube')">
+        <span class="icon">▶️</span>
+        <span class="label">YouTube</span>
+      </div>
+    </div>
+
+    <!-- Services Header -->
+    <div class="section-title">
+      <span>🔥 Xizmatlar</span>
+    </div>
+
+    <!-- Services List -->
+    <div class="services-grid" id="services-container">
+      <!-- Dynamic cards loaded via JS -->
+    </div>
+
+    <!-- Order Configuration Form -->
+    <div class="order-form" id="order-form">
+      <div class="section-title" id="form-service-title" style="color: #fff; margin-bottom: 14px;">
+        Buyurtma sozlamalari
+      </div>
+
+      <div class="input-group">
+        <label class="input-label">🔗 Kanal, guruh yoki profil havolasi (link):</label>
+        <input type="text" id="target-link" class="input-field" placeholder="https://t.me/kanal_nomi">
+      </div>
+
+      <div class="input-group">
+        <label class="input-label" id="qty-label">🔢 Kerakli miqdor (Kamida: 100 ta):</label>
+        <input type="number" id="target-qty" class="input-field" placeholder="1000" oninput="calculatePrice()">
+      </div>
+
+      <div class="calc-box">
+        <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Jami summa:</span>
+        <span class="calc-total" id="total-price">0 so'm</span>
+      </div>
+
+      <button class="btn-submit" onclick="submitOrder()">🚀 Buyurtma berish</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.ready();
+
+    // User data from Telegram
+    const initDataUnsafe = tg.initDataUnsafe || {};
+    const user = initDataUnsafe.user || { id: 7777777, first_name: "Azizbek", username: "user" };
+
+    document.getElementById("u-name").innerText = user.first_name || "Mijoz";
+    document.getElementById("u-id").innerText = "ID: " + user.id;
+    document.getElementById("u-avatar").innerText = (user.first_name || "N")[0].toUpperCase();
+
+    // Default services data
+    const servicesData = {
+      telegram: [
+        { id: 1, name: "🇺🇿 O'zbek Obunachilar (Real/Faol)", price: 25000, min: 100, max: 20000, desc: "100% O'zbekiston foydalanuvchilari, kanalingiz obunachilarini ko'paytirish uchun." },
+        { id: 2, name: "⚡ Tezkor Obunachilar (Mix/Tez)", price: 15000, min: 100, max: 50000, desc: "Tezkor tushuvchi sifatli obunachilar oqimi." },
+        { id: 3, name: "👁 Post Ko'rishlar (So'nggi 5-10 post)", price: 5000, min: 100, max: 50000, desc: "Barcha yangi postlaringizga doimiy prosmotrlar." },
+        { id: 4, name: "❤️ Post Reaksiyalari (Mix emoji)", price: 8000, min: 50, max: 10000, desc: "Har bir postingiz ostiga ijobiy va xilma-xil emojilar." }
+      ],
+      instagram: [
+        { id: 5, name: "🔥 Jonli O'zbek Obunachilar", price: 35000, min: 100, max: 20000, desc: "O'zbekiston real auditoriyasi profili uchun obunachilar." },
+        { id: 6, name: "⚡ Sifatli Obunachilar (Mix/Chet el)", price: 20000, min: 100, max: 50000, desc: "Kafolatli va tez to'ldiriladigan obunachilar." },
+        { id: 7, name: "❤️ Instagram Like (Layklar)", price: 7000, min: 100, max: 25000, desc: "Xohlagan post, karusel yoki rasmga layklar." },
+        { id: 8, name: "▶️ Reels Ko'rishlar (Views)", price: 4000, min: 500, max: 100000, desc: "Reels videolarni trendga chiqarish uchun ko'rishlar." }
+      ],
+      tiktok: [
+        { id: 9, name: "🎵 TikTok Obunachilar (Followers)", price: 30000, min: 100, max: 20000, desc: "TikTok profilingiz obunachilarini oshirish." },
+        { id: 10, name: "❤️ TikTok Like & Ko'rishlar", price: 10000, min: 100, max: 50000, desc: "TikTok videongizga layk va doimiy ko'rishlar." }
+      ],
+      youtube: [
+        { id: 11, name: "🔴 YouTube Obunachilar (Subscribers)", price: 90000, min: 50, max: 5000, desc: "Monetizatsiya ochish uchun kafolatli obunachilar." },
+        { id: 12, name: "▶️ YouTube Video Ko'rishlar (Views)", price: 35000, min: 500, max: 50000, desc: "Uzoq vaqt ushlanuvchi kafolatli video ko'rishlar." }
+      ]
+    };
+
+    let currentPlatform = 'telegram';
+    let selectedService = null;
+
+    function renderServices() {
+      const container = document.getElementById("services-container");
+      container.innerHTML = "";
+      const list = servicesData[currentPlatform] || [];
+
+      list.forEach(srv => {
+        const card = document.createElement("div");
+        card.className = "service-card" + (selectedService && selectedService.id === srv.id ? " selected" : "");
+        card.onclick = () => selectService(srv);
+
+        const priceStr = Number(srv.price).toLocaleString("ru-RU") + " so'm / 1k";
+        card.innerHTML = `
+          <div class="srv-top">
+            <div class="srv-name">${srv.name}</div>
+            <div class="srv-price">${priceStr}</div>
+          </div>
+          <div class="srv-desc">${srv.desc}</div>
+          <div class="srv-limits">
+            <span>📉 Min: ${srv.min.toLocaleString("ru-RU")}</span>
+            <span>📈 Max: ${srv.max.toLocaleString("ru-RU")}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function switchPlatform(plat) {
+      currentPlatform = plat;
+      selectedService = null;
+      document.getElementById("order-form").style.display = "none";
+      
+      const tabs = document.querySelectorAll(".plat-tab");
+      tabs.forEach(t => t.classList.remove("active"));
+      event.currentTarget.classList.add("active");
+
+      renderServices();
+    }
+
+    function selectService(srv) {
+      selectedService = srv;
+      renderServices();
+
+      const form = document.getElementById("order-form");
+      form.style.display = "block";
+      document.getElementById("form-service-title").innerText = "📌 " + srv.name;
+      document.getElementById("qty-label").innerText = `🔢 Kerakli miqdor (${srv.min.toLocaleString()} dan ${srv.max.toLocaleString()} gacha):`;
+      document.getElementById("target-qty").value = srv.min;
+      calculatePrice();
+
+      // Smooth scroll to form
+      form.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function calculatePrice() {
+      if (!selectedService) return;
+      const qtyInput = document.getElementById("target-qty");
+      let qty = parseInt(qtyInput.value) || 0;
+      const total = Math.round((qty / 1000) * selectedService.price);
+      document.getElementById("total-price").innerText = total.toLocaleString("ru-RU") + " so'm";
+    }
+
+    function submitOrder() {
+      if (!selectedService) return;
+      const link = document.getElementById("target-link").value.trim();
+      const qty = parseInt(document.getElementById("target-qty").value);
+
+      if (!link) {
+        tg.showAlert("Iltimos, kanal yoki profil havolasini (link) kiriting!");
+        return;
+      }
+      if (qty < selectedService.min || qty > selectedService.max) {
+        tg.showAlert(`Miqdor ${selectedService.min} va ${selectedService.max} orasida bo'lishi kerak!`);
+        return;
+      }
+
+      const total = Math.round((qty / 1000) * selectedService.price);
+
+      // Send data back to Telegram Bot
+      tg.sendData(JSON.stringify({
+        action: "create_order",
+        service_id: selectedService.id,
+        service_name: selectedService.name,
+        target_link: link,
+        quantity: qty,
+        total_price: total
+      }));
+    }
+
+    // Initial render
+    renderServices();
+  </script>
+</body>
+</html>
